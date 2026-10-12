@@ -1,0 +1,673 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>のぼれ！タイピングアスレチック</title>
+<meta name="description" content="表示されたことばを入力すると、アスレチックを上へのぼっていくタイピング練習アプリ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&family=Mochiy+Pop+One&display=swap">
+<style>
+/* Layout: one-screen app. Sky-and-wood athletic tower on top, word card + input pinned under it (stays above the phone keyboard). */
+:root {
+  color-scheme: light;
+  --sky-lo: #cdeeff;
+  --sky-mid: #8fcdf7;
+  --sky-hi: #3c6fd1;
+  --sky-top: #1f3577;
+  --wood: #b5702f;
+  --wood-dk: #6f3f17;
+  --rope: #e9cf93;
+  --leaf: #3d9f4b;
+  --leaf-dk: #2a7436;
+  --sun: #ffc83a;
+  --ink: #22304a;
+  --ink-soft: #5a6a86;
+  --paper: #fffbf2;
+  --card: #ffffff;
+  --line: #e6dccb;
+  --berry: #ff5a6e;
+  --ok: #16a05f;
+  --ng: #e0453a;
+  --font-display: "Mochiy Pop One", "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+  --font-body: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--font-body); -webkit-text-size-adjust: 100%; }
+button { font-family: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, label:focus-within { outline: 3px solid var(--sun); outline-offset: 2px; }
+
+#app { position: fixed; left: 0; right: 0; top: 0; height: var(--vh, 100%); display: flex; flex-direction: column; background: var(--paper); }
+
+/* ---------- header ---------- */
+.bar { display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 8px; background: var(--paper); border-bottom: 2px solid var(--line); font-weight: 800; }
+.bar .course { font-size: .8rem; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--card); border: 2px solid var(--line); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip b { font-size: 1rem; }
+.icon-btn { border: 2px solid var(--line); background: var(--card); border-radius: 10px; width: 36px; height: 34px; font-size: .95rem; font-weight: 800; display: grid; place-items: center; padding: 0; }
+
+/* ---------- scene ---------- */
+#scene { position: relative; flex: 1; min-height: 110px; overflow: hidden; background: var(--sky-lo); }
+#world { position: absolute; left: 0; right: 0; bottom: 0; transition: transform .7s cubic-bezier(.3,.7,.3,1);
+  background: linear-gradient(to top, var(--sky-lo) 0%, var(--sky-mid) 35%, var(--sky-hi) 78%, var(--sky-top) 100%); }
+.stars { position: absolute; left: 0; right: 0; top: 0; height: 260px; opacity: .8;
+  background-image: radial-gradient(2px 2px at 12% 30%, #fff 50%, transparent 51%), radial-gradient(2px 2px at 78% 18%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 40% 55%, #fff 50%, transparent 51%), radial-gradient(2px 2px at 88% 62%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 25% 75%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 62% 40%, #fff 50%, transparent 51%); }
+.sun { position: absolute; right: 8%; width: 70px; height: 70px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 0 10px rgba(255,200,58,.25), 0 0 0 22px rgba(255,200,58,.12); }
+.cloud { position: absolute; width: 90px; height: 28px; background: #fff; border-radius: 20px; opacity: .92; animation: drift linear infinite alternate; }
+.cloud::before, .cloud::after { content: ""; position: absolute; background: #fff; border-radius: 50%; }
+.cloud::before { width: 40px; height: 40px; left: 14px; top: -20px; }
+.cloud::after { width: 30px; height: 30px; left: 44px; top: -13px; }
+@keyframes drift { from { transform: translateX(-14px); } to { transform: translateX(14px); } }
+
+.ground { position: absolute; left: 0; right: 0; bottom: 0; height: 70px; background: var(--leaf);
+  box-shadow: inset 0 8px 0 #57b964; }
+.ground::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; height: 14px;
+  background: radial-gradient(circle at 10px 14px, #57b964 10px, transparent 11px) 0 0 / 22px 14px repeat-x; }
+.tree { position: absolute; bottom: 60px; width: 46px; height: 70px; }
+.tree::before { content: ""; position: absolute; left: 19px; bottom: 0; width: 8px; height: 26px; background: var(--wood-dk); border-radius: 3px; }
+.tree::after { content: ""; position: absolute; left: 0; bottom: 20px; width: 46px; height: 50px; border-radius: 50% 50% 46% 46%; background: var(--leaf-dk); }
+
+.plat { position: absolute; width: 36%; height: 16px; border-radius: 6px;
+  background: repeating-linear-gradient(90deg, var(--wood) 0 22px, #a5642a 22px 24px); box-shadow: 0 5px 0 var(--wood-dk); }
+.plat .post { position: absolute; bottom: -40px; width: 8px; height: 40px; background: var(--wood-dk); border-radius: 0 0 3px 3px; }
+.plat .post.l { left: 10%; } .plat .post.r { right: 10%; }
+.sign { position: absolute; top: -26px; padding: 1px 7px; border-radius: 5px; background: var(--paper); border: 2px solid var(--wood-dk); font-size: .72rem; font-weight: 800; color: var(--wood-dk); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plat.left .sign { left: 6px; } .plat.right .sign { right: 6px; }
+.plat.start { background: repeating-linear-gradient(90deg, #c98a45 0 22px, #b8783a 22px 24px); }
+
+.con { position: absolute; transform: translateX(-50%); }
+.con.ladder { width: 34px; border-left: 6px solid var(--wood-dk); border-right: 6px solid var(--wood-dk);
+  background: repeating-linear-gradient(to top, transparent 0 14px, var(--wood) 14px 20px); }
+.con.rope { width: 10px; border-radius: 5px;
+  background: repeating-linear-gradient(160deg, var(--rope) 0 6px, #c9a964 6px 9px); }
+.con.rope::after { content: ""; position: absolute; left: -5px; right: -5px; height: 10px; border-radius: 50%; background: #c9a964; top: 40%; box-shadow: 0 26px 0 #c9a964, 0 -26px 0 #c9a964; }
+.con.net { width: 70px; border: 4px solid var(--rope); border-radius: 4px;
+  background: repeating-linear-gradient(45deg, transparent 0 9px, var(--rope) 9px 12px), repeating-linear-gradient(-45deg, transparent 0 9px, var(--rope) 9px 12px); }
+.con.wall { width: 64px; border-radius: 6px; background-color: #f2e3c4; border: 3px solid var(--wood-dk);
+  background-image: radial-gradient(circle at 20% 15%, var(--berry) 5px, transparent 6px), radial-gradient(circle at 70% 32%, var(--sun) 5px, transparent 6px), radial-gradient(circle at 30% 52%, #2d9cdb 5px, transparent 6px), radial-gradient(circle at 75% 70%, var(--leaf) 5px, transparent 6px), radial-gradient(circle at 35% 88%, #9b59d0 5px, transparent 6px); }
+.con.pole { width: 12px; border-radius: 6px; background: linear-gradient(90deg, #9aa4b5, #e8edf5 45%, #8a93a3); }
+.con-label { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: .62rem; font-weight: 800; color: var(--wood-dk); background: rgba(255,251,242,.92); padding: 0 5px; border-radius: 4px; white-space: nowrap; pointer-events: none; }
+.con.ladder .con-label, .con.rope .con-label, .con.pole .con-label { left: calc(50% + 34px); }
+
+.goal-flag { position: absolute; bottom: 16px; width: 6px; height: 70px; background: #555; border-radius: 3px; }
+.goal-flag::after { content: ""; position: absolute; left: 6px; top: 2px; width: 44px; height: 30px; background: var(--berry);
+  clip-path: polygon(0 0, 100% 50%, 0 100%); transform-origin: left center; animation: wave 1.2s ease-in-out infinite alternate; }
+@keyframes wave { to { transform: scaleX(.8) skewY(4deg); } }
+.goal-banner { position: absolute; font-family: var(--font-display); color: #fff; font-size: 1.3rem; text-shadow: 0 3px 0 var(--sky-top); white-space: nowrap; transform: translateX(-50%); }
+
+.climber { position: absolute; width: 50px; height: 60px; margin-left: -25px; z-index: 5;
+  transition: left .28s linear, bottom .55s cubic-bezier(.4,.1,.4,1); }
+.climber svg { width: 100%; height: 100%; display: block; overflow: visible; transition: transform .2s; }
+.climber.flip svg { transform: scaleX(-1); }
+.climber .limb { transform-box: fill-box; transform-origin: 50% 8%; }
+.climber .armL { transform: rotate(20deg); } .climber .armR { transform: rotate(-20deg); }
+.climber.walk .legL { animation: stepA .28s ease-in-out infinite alternate; }
+.climber.walk .legR { animation: stepB .28s ease-in-out infinite alternate; }
+.climber.climb .armL { animation: reachA .26s ease-in-out infinite alternate; }
+.climber.climb .armR { animation: reachB .26s ease-in-out infinite alternate; }
+.climber.climb .legL { animation: stepA .26s ease-in-out infinite alternate; }
+.climber.climb .legR { animation: stepB .26s ease-in-out infinite alternate; }
+.climber.cheer .armL { transform: rotate(150deg); } .climber.cheer .armR { transform: rotate(-150deg); }
+.climber.cheer svg { animation: hop .45s ease-in-out infinite alternate; }
+@keyframes stepA { from { transform: rotate(18deg); } to { transform: rotate(-18deg); } }
+@keyframes stepB { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
+@keyframes reachA { from { transform: rotate(170deg); } to { transform: rotate(120deg); } }
+@keyframes reachB { from { transform: rotate(-120deg); } to { transform: rotate(-170deg); } }
+@keyframes hop { to { transform: translateY(-14px); } }
+
+.bubble { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); background: var(--card); border: 2px solid var(--ink); border-radius: 12px; padding: 2px 9px; font-weight: 800; font-size: .85rem; white-space: nowrap; animation: pop .9s ease-out forwards; pointer-events: none; }
+@keyframes pop { 0% { opacity: 0; transform: translate(-50%, 8px) scale(.7); } 20% { opacity: 1; transform: translate(-50%, 0) scale(1.05); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -16px); } }
+
+#confetti { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 8; }
+
+/* ---------- word panel ---------- */
+.panel { padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px); background: var(--paper); border-top: 3px solid var(--wood-dk); display: grid; gap: 8px; }
+.word-card { display: flex; align-items: center; gap: 12px; background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 8px 14px; min-height: 64px; }
+.word-card.shake { animation: shake .35s; border-color: var(--ng); }
+@keyframes shake { 25% { transform: translateX(-6px); } 50% { transform: translateX(6px); } 75% { transform: translateX(-3px); } }
+.pic { font-size: 2.2rem; line-height: 1; flex: none; }
+.word-text { min-width: 0; flex: 1; }
+.word { font-family: var(--font-display); font-size: clamp(1.5rem, 7.5vw, 2.2rem); line-height: 1.25; letter-spacing: .04em; word-break: break-all; }
+.word span { color: var(--ink); transition: color .12s; }
+.word span.done { color: var(--ok); }
+.word span.next { text-decoration: underline 3px var(--sun); text-underline-offset: 6px; }
+.romaji { font-size: .85rem; color: var(--ink-soft); letter-spacing: .08em; font-weight: 800; min-height: 1.1em; }
+.romaji[hidden] { display: none !important; }
+
+form.type-row { display: flex; gap: 8px; margin: 0; }
+#typeInput { flex: 1; min-width: 0; font-family: var(--font-body); font-weight: 800; font-size: 1.25rem; padding: 10px 14px; border-radius: 14px; border: 3px solid var(--line); background: var(--card); color: var(--ink); outline: none; }
+#typeInput:focus { border-color: var(--sky-hi); }
+#typeInput.bad { border-color: var(--ng); background: #fff4f2; }
+.pass-btn { flex: none; border: 3px solid var(--line); background: var(--card); border-radius: 14px; padding: 0 14px; font-weight: 800; font-size: .95rem; }
+
+/* ---------- overlays ---------- */
+.overlay { position: absolute; inset: 0; z-index: 20; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px calc(env(safe-area-inset-bottom, 0px) + 20px);
+  background: linear-gradient(to bottom, var(--sky-mid), var(--sky-lo) 55%, var(--paper) 100%); }
+.sheet { width: 100%; max-width: 440px; display: grid; gap: 14px; margin-block: auto; }
+.title { font-family: var(--font-display); font-size: clamp(1.8rem, 9vw, 2.5rem); line-height: 1.2; text-align: center; margin: 0; color: var(--ink); text-wrap: balance; }
+.title small { display: block; font-size: .45em; color: var(--wood-dk); letter-spacing: .1em; margin-bottom: 4px; }
+.lead { text-align: center; margin: 0; font-size: .95rem; line-height: 1.7; color: var(--ink); }
+.hero-climber { width: 72px; height: 86px; margin: 0 auto; }
+.hero-climber svg { width: 100%; height: 100%; }
+.hero-climber .armL { transform: rotate(150deg); } .hero-climber .armR { transform: rotate(-150deg); }
+.hero-climber .limb { transform-box: fill-box; transform-origin: 50% 8%; }
+.courses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.course-btn { text-align: left; border: 3px solid var(--wood-dk); border-radius: 16px; background: var(--card); padding: 12px; display: grid; gap: 2px; box-shadow: 0 4px 0 var(--wood-dk); transition: transform .08s, box-shadow .08s; }
+.course-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--wood-dk); }
+.course-btn .lv { font-size: .72rem; font-weight: 800; color: #fff; background: var(--c, var(--leaf)); border-radius: 999px; padding: 1px 8px; justify-self: start; }
+.course-btn .nm { font-family: var(--font-display); font-size: 1.05rem; }
+.course-btn .ex { font-size: .75rem; color: var(--ink-soft); }
+.course-btn .best { font-size: .75rem; font-weight: 800; color: var(--wood-dk); font-variant-numeric: tabular-nums; }
+.opts { display: grid; gap: 8px; background: rgba(255,255,255,.7); border-radius: 14px; padding: 10px 14px; }
+.opt { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: .92rem; }
+.opt input { width: 22px; height: 22px; accent-color: var(--leaf); }
+.opt .sub { font-weight: 500; font-size: .78rem; color: var(--ink-soft); }
+.result-big { font-family: var(--font-display); font-size: 2.6rem; text-align: center; margin: 0; color: var(--berry); text-shadow: 0 3px 0 #fff; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 8px; text-align: center; }
+.stat .k { font-size: .72rem; color: var(--ink-soft); font-weight: 800; }
+.stat .v { font-family: var(--font-display); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.newrec { justify-self: center; background: var(--sun); color: var(--ink); font-weight: 800; padding: 4px 14px; border-radius: 999px; animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { to { transform: scale(1.08); } }
+.btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.big-btn { border: 3px solid var(--wood-dk); border-radius: 16px; background: var(--sun); font-weight: 800; font-size: 1.05rem; padding: 14px 8px; box-shadow: 0 4px 0 var(--wood-dk); }
+.big-btn.alt { background: var(--card); }
+.big-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--wood-dk); }
+
+@media (prefers-reduced-motion: reduce) {
+  #world, .climber { transition-duration: .01s !important; }
+  .cloud, .goal-flag::after, .newrec, .climber.cheer svg { animation: none !important; }
+}
+</style>
+
+<div id="app">
+  <div class="bar">
+    <button class="icon-btn" id="quitBtn" type="button" aria-label="コースえらびにもどる">✕</button>
+    <span class="course" id="courseName">コースをえらんでね</span>
+    <span class="chip">⛰ <b id="height">0</b>m</span>
+    <span class="chip">⏱ <b id="timer">0.0</b></span>
+    <button class="icon-btn" id="soundBtn" type="button" aria-label="音のオン・オフ">♪</button>
+  </div>
+
+  <div id="scene">
+    <div id="world"></div>
+    <canvas id="confetti"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="word-card" id="wordCard">
+      <div class="pic" id="pic">🐶</div>
+      <div class="word-text">
+        <div class="word" id="word" aria-live="polite"><span>い</span><span>ぬ</span></div>
+        <div class="romaji" id="romaji">inu</div>
+      </div>
+    </div>
+    <form class="type-row" id="typeForm" autocomplete="off">
+      <input id="typeInput" type="text" placeholder="ここに入力してね" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="ことばを入力">
+      <button class="pass-btn" id="passBtn" type="button">パス</button>
+    </form>
+  </div>
+
+  <div class="overlay" id="startScreen">
+    <div class="sheet">
+      <div class="hero-climber" id="heroClimber"></div>
+      <h1 class="title"><small>タイピングれんしゅう</small>のぼれ！<br>アスレチック</h1>
+      <p class="lead">出てきたことばを入力すると、1だんのぼれるよ。<br>10だんのぼって、てっぺんの旗をめざそう！</p>
+      <div class="courses" id="courses"></div>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" id="optRomaji"> <span>ローマ字のヒントを出す<br><span class="sub">キーボードでローマ字入力するときに</span></span></label>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="resultScreen" hidden>
+    <div class="sheet">
+      <div class="hero-climber" id="heroClimber2"></div>
+      <p class="result-big">ゴール！</p>
+      <p class="lead" id="resultLead">30mのてっぺんまでのぼったよ！</p>
+      <div class="newrec" id="newRec" hidden>しんきろく！</div>
+      <div class="stats">
+        <div class="stat"><div class="k">タイム</div><div class="v" id="rTime">0.0</div></div>
+        <div class="stat"><div class="k">ミス</div><div class="v" id="rMiss">0</div></div>
+        <div class="stat"><div class="k">パス</div><div class="v" id="rPass">0</div></div>
+      </div>
+      <div class="lead" id="rBest"></div>
+      <div class="btn-row">
+        <button class="big-btn" id="againBtn" type="button">もういちど</button>
+        <button class="big-btn alt" id="menuBtn" type="button">コースをえらぶ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+// ---------------- word lists ----------------
+const COURSES = {
+  easy: { lv: "レベル1", name: "ひらがな", ex: "2〜4もじのことば", color: "#3d9f4b", abc: false, words: `
+🐶 いぬ|🐱 ねこ|🐮 うし|🐵 さる|🦀 かに|🐙 たこ|🦑 いか|🐻 くま|🐦 とり|🌸 はな|⛰️ やま|🌊 うみ|⭐ ほし|🌙 つき|☔ あめ|☁️ くも|🪑 いす|🍑 もも|🐟 さかな|🚢 ふね|🦊 きつね|🐿️ りす|🍉 すいか|🍊 みかん|🐸 かえる|🎈 ふうせん|🦉 ふくろう|🐔 にわとり|🍈 めろん|🐢 かめ|🦆 あひる|🏠 いえ|👂 みみ|🌻 ひまわり|🐺 おおかみ|🦈 さめ|🍠 いも|🍐 なし|🌰 くり|🐝 はち|🐜 あり|🍄 きのこ|👟 くつ|📖 ほん|❄️ ゆき|🌞 たいよう|🦁 らいおん|🍙 おにぎり`.trim() },
+  normal: { lv: "レベル2", name: "てんてん・カタカナ", ex: "が・ぱ・カタカナ", color: "#2d8bd6", abc: false, words: `
+🍎 りんご|🍓 いちご|🐰 うさぎ|🐘 ぞう|🐍 へび|🐋 くじら|🥚 たまご|🍞 パン|✏️ えんぴつ|👓 めがね|🍌 バナナ|🍇 ぶどう|🌈 にじ|🐭 ねずみ|🔑 かぎ|🎒 ランドセル|🍰 ケーキ|🎹 ピアノ|🦒 きりん|🐧 ペンギン|🐼 パンダ|🦍 ゴリラ|🐨 コアラ|🍔 ハンバーガー|🍕 ピザ|🍛 カレー|🌽 とうもろこし|🥕 にんじん|🍅 トマト|🎸 ギター|🍩 ドーナツ|📺 テレビ|🌵 サボテン|🐞 てんとうむし|🐉 ドラゴン|🍡 だんご|🦓 しまうま|🦔 はりねずみ|🏰 おしろ|🍣 すし|🌋 かざん|👻 おばけ|🎁 プレゼント|🧊 こおり|🦜 インコ|🍦 アイス|🚀 ロケット|🦕 きょうりゅう`.trim() },
+  hard: { lv: "レベル3", name: "小さい字・長いことば", ex: "ゃ・ゅ・ょ・っ", color: "#e0573a", abc: false, words: `
+🚒 しょうぼうしゃ|🚑 きゅうきゅうしゃ|🚃 でんしゃ|🚲 じてんしゃ|🦋 ちょうちょ|🎫 きっぷ|🏫 がっこう|🥷 にんじゃ|📝 しゅくだい|✈️ ひこうき|🎂 たんじょうび|✊ じゃんけん|🦖 きょうりゅう|⚽ サッカー|🍵 おちゃ|🍳 りょうり|🏥 びょういん|📚 としょかん|🚂 きしゃ|🍫 チョコレート|🥛 ぎゅうにゅう|🎡 かんらんしゃ|🍝 スパゲッティ|🌏 ちきゅう|🧪 じっけん|🏃 かけっこ|☀️ おはようございます|🙏 いただきます|😋 ごちそうさま|👋 いってきます|🏠 ただいま|💐 ありがとう|📮 ゆうびんきょく|🎤 しゅっぱつ|🐈 しっぽ|🧸 ぬいぐるみ|🍮 プリン|🚓 パトカー`.trim() },
+  abc: { lv: "レベル4", name: "ABC えいご", ex: "かんたんな英語", color: "#8a4fc8", abc: true, words: `
+🐱 cat|🐶 dog|☀️ sun|🖊️ pen|📖 book|🍎 apple|🥚 egg|🐟 fish|🐦 bird|🦁 lion|🐻 bear|⭐ star|🌙 moon|☔ rain|🥛 milk|🍰 cake|⚽ ball|🔴 red|🔵 blue|🟢 green|🚌 bus|🚗 car|🌳 tree|🎩 hat|☕ cup|🐷 pig|🦊 fox|🐸 frog|🍌 banana|🎹 piano|🌈 rainbow|🏫 school|🍕 pizza|🐼 panda|🐵 monkey|🦒 giraffe|🍉 melon|🐝 bee|🚀 rocket`.trim() },
+};
+for (const c of Object.values(COURSES)) {
+  c.list = c.words.split("|").map(s => { const i = s.indexOf(" "); return { pic: s.slice(0, i), word: s.slice(i + 1).trim() }; });
+}
+const STEPS = 10, METER = 3;
+
+// ---------------- kana / romaji matching ----------------
+const T = {};
+`あ=a い=i|yi う=u|wu え=e お=o か=ka|ca き=ki く=ku|cu|qu け=ke こ=ko|co さ=sa し=shi|si|ci す=su せ=se|ce そ=so
+た=ta ち=chi|ti つ=tsu|tu て=te と=to な=na に=ni ぬ=nu ね=ne の=no は=ha ひ=hi ふ=fu|hu へ=he ほ=ho
+ま=ma み=mi む=mu め=me も=mo や=ya ゆ=yu よ=yo ら=ra り=ri る=ru れ=re ろ=ro わ=wa を=wo
+が=ga ぎ=gi ぐ=gu げ=ge ご=go ざ=za じ=ji|zi ず=zu ぜ=ze ぞ=zo だ=da ぢ=di づ=du で=de ど=do
+ば=ba び=bi ぶ=bu べ=be ぼ=bo ぱ=pa ぴ=pi ぷ=pu ぺ=pe ぽ=po ゔ=vu
+ぁ=xa|la ぃ=xi|li ぅ=xu|lu ぇ=xe|le ぉ=xo|lo ゃ=xya|lya ゅ=xyu|lyu ょ=xyo|lyo っ=xtu|ltu|xtsu ゎ=xwa ー=-
+しぇ=she|sye ちぇ=che|tye じぇ=je|zye ふぁ=fa ふぃ=fi ふぇ=fe ふぉ=fo てぃ=thi でぃ=dhi うぃ=wi うぇ=we`
+  .split(/\s+/).forEach(p => { const [k, v] = p.split("="); T[k] = v.split("|"); });
+const Y = { き: ["ky"], ぎ: ["gy"], に: ["ny"], ひ: ["hy"], び: ["by"], ぴ: ["py"], み: ["my"], り: ["ry"], し: ["sh", "sy"], ち: ["ch", "ty", "cy"], じ: ["j", "zy", "jy"], ぢ: ["dy"] };
+for (const [k, pre] of Object.entries(Y)) for (const [s, v] of [["ゃ", "a"], ["ゅ", "u"], ["ょ", "o"]]) T[k + s] = pre.map(p => p + v);
+const N_BLOCK = "あいうえおやゆよなにぬねのんぁぃぅぇぉゃゅょ";
+
+function normalize(s) {
+  return s.normalize("NFKC").toLowerCase().replace(/\s+/g, "")
+    .replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
+
+function makeMatcher(target, abc) {
+  const optCache = [];
+  function options(k) {
+    if (optCache[k]) return optCache[k];
+    const c = target[k], c2 = target.slice(k, k + 2), opts = [[c, 1]];
+    if (!abc) {
+      if (c2.length === 2 && T[c2]) T[c2].forEach(a => opts.push([a, 2]));
+      if (T[c]) T[c].forEach(a => opts.push([a, 1]));
+      if (c === "ん") {
+        opts.push(["nn", 1], ["n'", 1], ["xn", 1]);
+        const nx = target[k + 1];
+        if (!nx || !N_BLOCK.includes(nx)) opts.push(["n", 1]);
+      }
+      if (c === "っ" && k + 1 < target.length) {
+        for (const [a, n] of options(k + 1)) if (/^[bcdfghjkmpqrstvwyz]/.test(a)) opts.push([a[0] + a, 1 + n]);
+      }
+    }
+    return (optCache[k] = opts);
+  }
+  // returns how many target chars are finished, or -1 if the input can't lead to the target
+  return function progress(input) {
+    const memo = new Map();
+    function f(k, p) {
+      if (p === input.length) return k;
+      if (k >= target.length) return -1;
+      const key = k * 1000 + p;
+      if (memo.has(key)) return memo.get(key);
+      let best = -1;
+      const rest = input.slice(p);
+      for (const [a, n] of options(k)) {
+        if (rest.startsWith(a)) best = Math.max(best, f(k + n, p + a.length));
+        else if (a.startsWith(rest)) best = Math.max(best, k);
+      }
+      memo.set(key, best);
+      return best;
+    }
+    return f(0, 0);
+  };
+}
+
+function romajiHint(t) {
+  function first(k) {
+    const c = t[k], c2 = t.slice(k, k + 2);
+    if (c === "っ" && k + 1 < t.length) { const [a, n] = first(k + 1); return [/^[a-z]/.test(a) ? a[0] + a : "xtu" + a, 1 + n]; }
+    if (c === "ん") { const nx = t[k + 1]; return [!nx || !N_BLOCK.includes(nx) ? "n" : "nn", 1]; }
+    if (c2.length === 2 && T[c2]) return [T[c2][0], 2];
+    if (T[c]) return [T[c][0], 1];
+    return [c, 1];
+  }
+  let out = "", k = 0;
+  while (k < t.length) { const [a, n] = first(k); out += a; k += n; }
+  return out;
+}
+
+// ---------------- storage (optional) ----------------
+const store = {
+  get(key, def) { try { const v = localStorage.getItem(key); return v == null ? def : JSON.parse(v); } catch { return def; } },
+  set(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} },
+};
+
+// ---------------- sound ----------------
+let actx = null, soundOn = store.get("climb-sound", true);
+function beep(notes, type = "triangle", len = 0.12, vol = 0.18) {
+  if (!soundOn) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+    let t = actx.currentTime;
+    for (const f of notes) {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + len);
+      t += len * 0.75;
+    }
+  } catch {}
+}
+const sfx = {
+  ok: () => beep([660, 880]),
+  miss: () => beep([220, 180], "square", 0.12, 0.08),
+  goal: () => beep([523, 659, 784, 1047, 784, 1047], "triangle", 0.16, 0.2),
+};
+
+// ---------------- DOM ----------------
+const $ = id => document.getElementById(id);
+const app = $("app"), scene = $("scene"), world = $("world");
+let input = $("typeInput");
+const CLIMBER_SVG = `<svg viewBox="0 0 60 72" aria-hidden="true">
+  <g class="limb legL"><rect x="21" y="50" width="7" height="16" rx="3" fill="#2d4a8a"/><rect x="19" y="63" width="11" height="6" rx="3" fill="#3a3a3a"/></g>
+  <g class="limb legR"><rect x="32" y="50" width="7" height="16" rx="3" fill="#2d4a8a"/><rect x="31" y="63" width="11" height="6" rx="3" fill="#3a3a3a"/></g>
+  <g class="limb armL"><rect x="11" y="34" width="7" height="17" rx="3.5" fill="#ffd2a6"/></g>
+  <g class="limb armR"><rect x="42" y="34" width="7" height="17" rx="3.5" fill="#ffd2a6"/></g>
+  <rect x="17" y="32" width="26" height="22" rx="9" fill="#ff5a6e"/>
+  <text x="30" y="48" text-anchor="middle" font-size="10" font-weight="800" fill="#fff" font-family="sans-serif">1</text>
+  <circle cx="30" cy="22" r="13" fill="#ffd9b0"/>
+  <path d="M16.5 21 a13.5 13.5 0 0 1 27 0 z" fill="#ffc83a"/>
+  <rect x="38" y="19" width="9" height="3.5" rx="1.75" fill="#e9a91d"/>
+  <circle cx="25" cy="25" r="1.9" fill="#22304a"/><circle cx="34" cy="25" r="1.9" fill="#22304a"/>
+  <circle cx="21.5" cy="29" r="2.3" fill="#ffaaa0"/><circle cx="38" cy="29" r="2.3" fill="#ffaaa0"/>
+  <path d="M26 30 q4 3.5 8 0" stroke="#22304a" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+</svg>`;
+$("heroClimber").innerHTML = CLIMBER_SVG;
+$("heroClimber2").innerHTML = CLIMBER_SVG;
+
+const GROUND_H = 70, STEP = 116, TOP_PAD = 240;
+const WORLD_H = GROUND_H + STEPS * STEP + TOP_PAD;
+const CON_TYPES = [["ladder", "はしご"], ["net", "ネット"], ["rope", "ロープ"], ["wall", "ボルダリング"], ["pole", "のぼりぼう"]];
+const platX = i => (i % 2 === 0 ? 30 : 70);              // center, in %
+const platY = i => GROUND_H + i * STEP;                    // bottom of platform, in px
+
+let climber;
+function buildWorld() {
+  world.style.height = WORLD_H + "px";
+  let html = `<div class="stars"></div><div class="sun" style="bottom:${WORLD_H - 150}px"></div>`;
+  const clouds = [[8, 180], [60, 330], [20, 520], [70, 700], [5, 880], [55, 1050], [30, 1200]];
+  clouds.forEach(([x, y], i) => { if (y < WORLD_H - 120) html += `<div class="cloud" style="left:${x}%;bottom:${y}px;animation-duration:${5 + i}s"></div>`; });
+  html += `<div class="ground"></div><div class="tree" style="left:2%"></div><div class="tree" style="right:3%;transform:scale(.8)"></div>`;
+  for (let i = 0; i < STEPS; i++) {
+    const [type, label] = CON_TYPES[i % CON_TYPES.length];
+    html += `<div class="con ${type}" style="left:50%;bottom:${platY(i) + 16}px;height:${STEP - 16}px"><span class="con-label">${label}</span></div>`;
+  }
+  for (let i = 0; i <= STEPS; i++) {
+    const side = i % 2 === 0 ? "left" : "right";
+    const sign = i === 0 ? "スタート" : i === STEPS ? `てっぺん ${i * METER}m` : `${i * METER}m`;
+    html += `<div class="plat ${side}${i === 0 ? " start" : ""}" style="left:${platX(i) - 18}%;bottom:${platY(i)}px">
+      <span class="post l"></span><span class="post r"></span><span class="sign">${sign}</span></div>`;
+  }
+  const gx = platX(STEPS);
+  html += `<div class="goal-flag" style="left:calc(${gx + 12}%);bottom:${platY(STEPS) + 16}px"></div>`;
+  html += `<div class="goal-banner" style="left:${gx}%;bottom:${platY(STEPS) + 110}px">ゴール！</div>`;
+  html += `<div class="climber" id="climber">${CLIMBER_SVG}</div>`;
+  world.innerHTML = html;
+  climber = $("climber");
+}
+
+// ---------------- game state ----------------
+let course = null, queue = [], cur = null, matcher = null;
+let level = 0, passes = 0, misses = 0, startAt = 0, endAt = 0, tick = null, playing = false;
+let lastHit = 0;
+let showRomaji = store.get("climb-romaji", false);
+const best = store.get("climb-best", {});
+
+function placeClimber(i, instant) {
+  if (instant) { climber.style.transition = "none"; }
+  climber.style.left = platX(i) + "%";
+  climber.style.bottom = platY(i) + 16 + "px";
+  climber.classList.toggle("flip", false);
+  if (instant) { void climber.offsetWidth; climber.style.transition = ""; }
+  camera(platY(i), instant);
+}
+function camera(y, instant) {
+  const h = scene.clientHeight;
+  const off = Math.max(0, Math.min(WORLD_H - h, y - h * 0.3));
+  if (instant) world.style.transition = "none";
+  world.style.transform = `translateY(${off}px)`;
+  if (instant) { void world.offsetWidth; world.style.transition = ""; }
+}
+let camY = 0;
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// climbs are queued so fast typists never skip an animation
+let climbChain = Promise.resolve(), shownLevel = 0;
+function climbTo(target) {
+  climbChain = climbChain.then(async () => {
+    while (shownLevel < target) {
+      const from = shownLevel, to = from + 1;
+      const fast = reduced ? 0 : 1;
+      climber.classList.toggle("flip", platX(from) > 50);
+      climber.classList.add("walk");
+      climber.style.left = "50%";
+      await wait(280 * fast);
+      climber.classList.remove("walk"); climber.classList.add("climb");
+      climber.style.bottom = platY(to) + 16 + "px";
+      camY = platY(to); camera(camY);
+      await wait(560 * fast);
+      climber.classList.remove("climb"); climber.classList.add("walk");
+      climber.classList.toggle("flip", platX(to) < 50);
+      climber.style.left = platX(to) + "%";
+      await wait(280 * fast);
+      climber.classList.remove("walk");
+      shownLevel = to;
+      $("height").textContent = to * METER;
+    }
+  });
+  return climbChain;
+}
+
+function bubble(text) {
+  const b = document.createElement("div");
+  b.className = "bubble"; b.textContent = text;
+  climber.appendChild(b);
+  setTimeout(() => b.remove(), 950);
+}
+const PRAISE = ["ナイス！", "いいね！", "すごい！", "その調子！", "やったね！", "かっこいい！"];
+
+function fmt(ms) { return (ms / 1000).toFixed(1); }
+
+function nextWord() {
+  if (!queue.length) queue = shuffle(course.list.slice());
+  cur = queue.pop();
+  cur.target = normalize(cur.word);
+  matcher = makeMatcher(cur.target, course.abc);
+  $("pic").textContent = cur.pic;
+  $("romaji").textContent = course.abc ? "" : romajiHint(cur.target);
+  $("romaji").hidden = course.abc || !showRomaji;
+  renderWord(0);
+}
+function renderWord(done) {
+  const chars = Array.from(cur.word);
+  $("word").innerHTML = chars.map((c, i) => `<span class="${i < done ? "done" : i === done ? "next" : ""}">${c}</span>`).join("");
+}
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function startGame(key) {
+  course = COURSES[key];
+  course.key = key;
+  queue = []; level = 0; shownLevel = 0; passes = 0; misses = 0;
+  climbChain = Promise.resolve();
+  climber.className = "climber";
+  placeClimber(0, true);
+  $("height").textContent = 0;
+  $("courseName").textContent = `${course.lv} ${course.name}`;
+  $("startScreen").hidden = true; $("resultScreen").hidden = true;
+  clearInput();
+  input.disabled = false;
+  input.inputMode = course.abc ? "email" : "text";
+  input.focus();
+  nextWord();
+  playing = true;
+  startAt = performance.now();
+  clearInterval(tick);
+  tick = setInterval(() => { $("timer").textContent = fmt(performance.now() - startAt); }, 100);
+}
+
+function readInput() {
+  return normalize(input.value);
+}
+
+function check() {
+  if (!playing) return;
+  const v = readInput();
+  const p = v ? matcher(v) : 0;
+  input.classList.toggle("bad", p < 0);
+  if (p === cur.target.length) return hit();
+  renderWord(Math.max(0, p));
+}
+
+// Phone keyboards keep the text they are still converting and write it back
+// after value = "". Swapping in a brand-new input drops that state; moving focus
+// from one input to another keeps the keyboard open (same as code-entry boxes).
+function clearInput() {
+  const old = input, fresh = old.cloneNode(false);
+  fresh.value = "";
+  fresh.classList.remove("bad");
+  old.removeAttribute("id");
+  old.after(fresh);
+  input = fresh;
+  if (document.activeElement === old) fresh.focus();
+  old.hidden = true;
+  setTimeout(() => old.remove(), 500);
+}
+
+function hit() {
+  clearInput();
+  input.classList.remove("bad");
+  level++;
+  sfx.ok();
+  const now = performance.now();
+  climbTo(level).then(() => {});
+  setTimeout(() => bubble(now - lastHit < 3500 && lastHit ? "はやい！" : PRAISE[Math.floor(Math.random() * PRAISE.length)]), reduced ? 0 : 900);
+  lastHit = now;
+  if (level >= STEPS) return finish();
+  nextWord();
+}
+
+function finish() {
+  playing = false;
+  endAt = performance.now();
+  clearInterval(tick);
+  const ms = endAt - startAt;
+  $("timer").textContent = fmt(ms);
+  input.disabled = true;
+  input.blur();
+  climbChain.then(async () => {
+    climber.classList.add("cheer");
+    sfx.goal();
+    confetti();
+    await wait(1500);
+    const prev = best[course.key];
+    const isNew = prev == null || ms < prev;
+    if (isNew) { best[course.key] = ms; store.set("climb-best", best); }
+    $("rTime").textContent = fmt(ms);
+    $("rMiss").textContent = misses;
+    $("rPass").textContent = passes;
+    $("newRec").hidden = !isNew;
+    $("resultLead").textContent = `${STEPS * METER}mのてっぺんまでのぼったよ！`;
+    $("rBest").textContent = isNew && prev != null ? `まえのきろく ${fmt(prev)}びょう` : !isNew ? `じこベスト ${fmt(best[course.key])}びょう` : "";
+    $("resultScreen").hidden = false;
+    renderCourses();
+  });
+}
+
+function goMenu() {
+  playing = false; clearInterval(tick);
+  input.blur();
+  renderCourses();
+  $("resultScreen").hidden = true;
+  $("startScreen").hidden = false;
+}
+
+function renderCourses() {
+  $("courses").innerHTML = Object.entries(COURSES).map(([k, c]) => `
+    <button class="course-btn" type="button" data-course="${k}" style="--c:${c.color}">
+      <span class="lv">${c.lv}</span><span class="nm">${c.name}</span><span class="ex">${c.ex}</span>
+      <span class="best">${best[k] != null ? `ベスト ${fmt(best[k])}びょう` : "まだきろくなし"}</span>
+    </button>`).join("");
+}
+
+// ---------------- confetti ----------------
+function confetti() {
+  if (reduced) return;
+  const cv = $("confetti"), ctx = cv.getContext("2d");
+  const w = cv.width = scene.clientWidth, h = cv.height = scene.clientHeight;
+  const colors = ["#ff5a6e", "#ffc83a", "#3d9f4b", "#2d8bd6", "#8a4fc8", "#ffffff"];
+  const ps = Array.from({ length: 90 }, () => ({ x: w / 2, y: h * 0.45, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 9 - 3, r: Math.random() * 6.28, c: colors[Math.floor(Math.random() * colors.length)] }));
+  const t0 = performance.now();
+  (function frame(t) {
+    ctx.clearRect(0, 0, w, h);
+    for (const p of ps) { p.vy += 0.25; p.x += p.vx; p.y += p.vy; p.r += 0.2;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-4, -2.5, 8, 5); ctx.restore(); }
+    if (t - t0 < 2600) requestAnimationFrame(frame); else ctx.clearRect(0, 0, w, h);
+  })(t0);
+}
+
+// ---------------- events ----------------
+// listen on the form: the input element gets replaced after every word
+const typeForm = $("typeForm");
+for (const ev of ["input", "compositionend"]) typeForm.addEventListener(ev, e => { if (e.target === input) check(); });
+$("typeForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!playing) return;
+  const v = readInput();
+  if (!v) return;
+  if (matcher(v) === cur.target.length) return hit();
+  misses++;
+  sfx.miss();
+  const card = $("wordCard");
+  card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
+});
+$("passBtn").addEventListener("click", () => {
+  if (!playing) return;
+  passes++;
+  clearInput();
+  nextWord();
+  input.focus();
+});
+$("courses").addEventListener("click", e => {
+  const b = e.target.closest("[data-course]");
+  if (b) startGame(b.dataset.course);
+});
+$("againBtn").addEventListener("click", () => startGame(course.key));
+$("menuBtn").addEventListener("click", goMenu);
+$("quitBtn").addEventListener("click", goMenu);
+$("soundBtn").addEventListener("click", () => {
+  soundOn = !soundOn; store.set("climb-sound", soundOn);
+  $("soundBtn").style.opacity = soundOn ? 1 : 0.4;
+  if (soundOn) sfx.ok();
+});
+$("soundBtn").style.opacity = soundOn ? 1 : 0.4;
+const optR = $("optRomaji");
+optR.checked = showRomaji;
+optR.addEventListener("change", () => { showRomaji = optR.checked; store.set("climb-romaji", showRomaji); });
+scene.addEventListener("click", () => { if (playing) input.focus(); });
+
+// keep the app inside the visible area when the phone keyboard opens
+function fit() {
+  const vv = window.visualViewport;
+  app.style.setProperty("--vh", (vv ? vv.height : window.innerHeight) + "px");
+  app.style.top = (vv ? vv.offsetTop : 0) + "px";
+  camera(platY(shownLevel), true);
+}
+if (window.visualViewport) { visualViewport.addEventListener("resize", fit); visualViewport.addEventListener("scroll", fit); }
+window.addEventListener("resize", fit);
+
+// ---------------- boot ----------------
+buildWorld();
+renderCourses();
+course = COURSES.easy; course.key = "easy";
+cur = { pic: "🐶", word: "いぬ" };
+fit();
+placeClimber(0, true);
+})();
+</script>

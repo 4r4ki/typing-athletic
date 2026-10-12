@@ -1,0 +1,7 @@
+# Claude Code のプレビュー用設定（アプリ本体には不要）
+.claude/
+
+# OS が作るファイル
+Thumbs.db
+Desktop.ini
+.DS_Store
