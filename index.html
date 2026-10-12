@@ -516,6 +516,7 @@ function startGame(key) {
   $("height").textContent = 0;
   $("courseName").textContent = `${course.lv} ${course.name}`;
   $("startScreen").hidden = true; $("resultScreen").hidden = true;
+  earlier = [];
   clearInput();
   input.disabled = false;
   input.inputMode = course.abc ? "email" : "text";
@@ -528,25 +529,38 @@ function startGame(key) {
 }
 
 // Phone keyboards keep the text they are still converting and may write it back
-// after value = "", at unpredictable times. That leftover is remembered here,
-// skipped when reading, and never drawn in the visible box. It can be the whole
-// old value or only the last word, so both are kept (longest first).
-let stale = [], composing = false;
+// after value = "", at unpredictable times and in a changed form (iPhone romaji:
+// "みかn" comes back as "みかんk"). So earlier words are recognised by whether
+// they read as that word, not by exact text, and skipped. This only kicks in
+// when the box does not already read as the start of the current word.
+let earlier = [], composing = false;
+function rememberWord() {
+  if (!cur || !cur.target || !matcher) return;
+  earlier.push({ m: matcher, len: cur.target.length });
+  if (earlier.length > STEPS) earlier.shift();
+}
 function currentText() {
-  const v = input.value;
-  if (!stale.length || !v) return v;
-  const s = stale.find(s => v.startsWith(s));
-  if (s) return v.slice(s.length);
-  if (v && stale.some(s => s.startsWith(v))) return "";
-  stale = [];
-  return v;
+  let rest = input.value;
+  if (!rest || !earlier.length || matcher(normalize(rest)) >= 0) return rest;
+  for (let changed = true; changed && rest;) {
+    changed = false;
+    for (const w of earlier) {
+      for (let i = rest.length; i > 0; i--) {
+        if (w.m(normalize(rest.slice(0, i))) === w.len) { rest = rest.slice(i); changed = true; break; }
+      }
+      if (changed) break;
+    }
+    if (rest && matcher(normalize(rest)) >= 0) return rest;
+  }
+  // only part of an earlier word is left (the keyboard is still holding it)
+  if (rest && earlier.some(w => w.m(normalize(rest)) >= 0)) return "";
+  return rest;
 }
 // once the keyboard has finished converting, the real value can be cleaned too
 function tidy() {
   if (composing) return;
-  const s = stale.find(s => input.value.startsWith(s));
-  // stale stays remembered: some keyboards write it back once more, later
-  if (s) input.value = input.value.slice(s.length);
+  const rest = currentText();
+  if (rest !== input.value) input.value = rest;
 }
 function readInput() {
   return normalize(currentText());
@@ -569,8 +583,7 @@ function check() {
 }
 
 function clearInput() {
-  const own = currentText();
-  stale = [...new Set([input.value, own])].filter(Boolean).sort((a, b) => b.length - a.length);
+  rememberWord();
   if (!composing) input.value = "";
   renderBox(false);
 }
