@@ -478,7 +478,10 @@ function fmt(ms) { return (ms / 1000).toFixed(1); }
 
 function nextWord() {
   if (!queue.length) queue = shuffle(course.list.slice());
-  cur = queue.pop();
+  // never start with the same letter as the last word, so leftover text can't be mistaken for new typing
+  const prev = cur && cur.target ? cur.target[0] : "";
+  const i = queue.findLastIndex(w => normalize(w.word)[0] !== prev);
+  cur = queue.splice(i < 0 ? queue.length - 1 : i, 1)[0];
   cur.target = normalize(cur.word);
   matcher = makeMatcher(cur.target, course.abc);
   $("pic").textContent = cur.pic;
@@ -513,8 +516,25 @@ function startGame(key) {
   tick = setInterval(() => { $("timer").textContent = fmt(performance.now() - startAt); }, 100);
 }
 
+// Text from the previous word that a phone keyboard may write back into the
+// new input box. It is ignored while reading and removed as soon as possible.
+// It can be the whole old box or only the last word, so both are remembered (longest first).
+let stale = [];
+function currentText() {
+  const v = input.value;
+  if (!stale.length) return v;
+  const s = stale.find(s => v.startsWith(s));
+  if (s) return v.slice(s.length);
+  if (v && stale.some(s => s.startsWith(v))) return "";
+  stale = [];
+  return v;
+}
+function tidy() {
+  const s = stale.find(s => input.value.startsWith(s));
+  if (s) { input.value = input.value.slice(s.length); stale = []; }
+}
 function readInput() {
-  return normalize(input.value);
+  return normalize(currentText());
 }
 
 function check() {
@@ -527,16 +547,20 @@ function check() {
 }
 
 // Phone keyboards keep the text they are still converting and write it back
-// after value = "". Swapping in a brand-new input drops that state; moving focus
-// from one input to another keeps the keyboard open (same as code-entry boxes).
+// after value = "". Blurring ends that conversion, and a brand-new input box
+// starts clean; moving focus straight to it keeps the keyboard open.
 function clearInput() {
   const old = input, fresh = old.cloneNode(false);
+  const hadFocus = document.activeElement === old;
+  const own = currentText();
+  stale = [...new Set([old.value, own])].filter(Boolean).sort((a, b) => b.length - a.length);
+  old.blur();
   fresh.value = "";
   fresh.classList.remove("bad");
   old.removeAttribute("id");
   old.after(fresh);
   input = fresh;
-  if (document.activeElement === old) fresh.focus();
+  if (hadFocus) fresh.focus();
   old.hidden = true;
   setTimeout(() => old.remove(), 500);
 }
@@ -616,7 +640,16 @@ function confetti() {
 // ---------------- events ----------------
 // listen on the form: the input element gets replaced after every word
 const typeForm = $("typeForm");
-for (const ev of ["input", "compositionend"]) typeForm.addEventListener(ev, e => { if (e.target === input) check(); });
+typeForm.addEventListener("input", e => {
+  if (e.target !== input) return;
+  if (!e.isComposing) tidy();
+  check();
+});
+typeForm.addEventListener("compositionend", e => {
+  if (e.target !== input) return;
+  check();
+  setTimeout(() => { tidy(); check(); }, 0);
+});
 $("typeForm").addEventListener("submit", e => {
   e.preventDefault();
   if (!playing) return;
