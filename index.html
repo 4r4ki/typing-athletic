@@ -134,9 +134,17 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 3px sol
 .romaji[hidden] { display: none !important; }
 
 form.type-row { display: flex; gap: 8px; margin: 0; }
-#typeInput { flex: 1; min-width: 0; font-family: var(--font-body); font-weight: 800; font-size: 1.25rem; padding: 10px 14px; border-radius: 14px; border: 3px solid var(--line); background: var(--card); color: var(--ink); outline: none; }
-#typeInput:focus { border-color: var(--sky-hi); }
-#typeInput.bad { border-color: var(--ng); background: #fff4f2; }
+/* The box the child sees is drawn by the app; the real input sits on top of it, invisible.
+   Leftover text a phone keyboard writes back into the real input never shows up here. */
+.type-wrap { position: relative; flex: 1; min-width: 0; }
+.type-box { font-weight: 800; font-size: 1.25rem; line-height: 1.4; padding: 10px 14px; border-radius: 14px; border: 3px solid var(--line); background: var(--card); color: var(--ink); white-space: nowrap; overflow: hidden; display: flex; align-items: center; min-height: 54px; }
+.type-box.empty::before { content: "ここに入力してね"; color: var(--ink-soft); font-weight: 500; }
+.type-wrap:focus-within .type-box { border-color: var(--sky-hi); }
+.type-wrap:focus-within .type-box::after { content: ""; width: 2px; height: 1.3em; margin-left: 2px; background: var(--sky-hi); animation: blink 1s steps(1) infinite; }
+.type-wrap:focus-within .type-box.empty::after { order: -1; margin: 0 4px 0 0; }
+.type-box.bad { border-color: var(--ng) !important; background: #fff4f2; }
+@keyframes blink { 50% { opacity: 0; } }
+#typeInput { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; border: 0; padding: 0 14px; background: transparent; color: transparent; caret-color: transparent; }
 .pass-btn { flex: none; border: 3px solid var(--line); background: var(--card); border-radius: 14px; padding: 0 14px; font-weight: 800; font-size: .95rem; }
 
 /* ---------- overlays ---------- */
@@ -202,7 +210,10 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
       </div>
     </div>
     <form class="type-row" id="typeForm" autocomplete="off">
-      <input id="typeInput" type="text" placeholder="ここに入力してね" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="ことばを入力">
+      <div class="type-wrap">
+        <div class="type-box empty" id="typeBox" aria-hidden="true"></div>
+        <input id="typeInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="ことばを入力">
+      </div>
       <button class="pass-btn" id="passBtn" type="button">パス</button>
     </form>
   </div>
@@ -364,7 +375,7 @@ const sfx = {
 // ---------------- DOM ----------------
 const $ = id => document.getElementById(id);
 const app = $("app"), scene = $("scene"), world = $("world");
-let input = $("typeInput");
+const input = $("typeInput"), typeBox = $("typeBox");
 const CLIMBER_SVG = `<svg viewBox="0 0 60 72" aria-hidden="true">
   <g class="limb legL"><rect x="21" y="50" width="7" height="16" rx="3" fill="#2d4a8a"/><rect x="19" y="63" width="11" height="6" rx="3" fill="#3a3a3a"/></g>
   <g class="limb legR"><rect x="32" y="50" width="7" height="16" rx="3" fill="#2d4a8a"/><rect x="31" y="63" width="11" height="6" rx="3" fill="#3a3a3a"/></g>
@@ -516,58 +527,56 @@ function startGame(key) {
   tick = setInterval(() => { $("timer").textContent = fmt(performance.now() - startAt); }, 100);
 }
 
-// Text from the previous word that a phone keyboard may write back into the
-// new input box. It is ignored while reading and removed as soon as possible.
-// It can be the whole old box or only the last word, so both are remembered (longest first).
-let stale = [];
+// Phone keyboards keep the text they are still converting and may write it back
+// after value = "", at unpredictable times. That leftover is remembered here,
+// skipped when reading, and never drawn in the visible box. It can be the whole
+// old value or only the last word, so both are kept (longest first).
+let stale = [], composing = false;
 function currentText() {
   const v = input.value;
-  if (!stale.length) return v;
+  if (!stale.length || !v) return v;
   const s = stale.find(s => v.startsWith(s));
   if (s) return v.slice(s.length);
   if (v && stale.some(s => s.startsWith(v))) return "";
   stale = [];
   return v;
 }
+// once the keyboard has finished converting, the real value can be cleaned too
 function tidy() {
+  if (composing) return;
   const s = stale.find(s => input.value.startsWith(s));
-  if (s) { input.value = input.value.slice(s.length); stale = []; }
+  // stale stays remembered: some keyboards write it back once more, later
+  if (s) input.value = input.value.slice(s.length);
 }
 function readInput() {
   return normalize(currentText());
+}
+function renderBox(bad) {
+  const t = currentText();
+  typeBox.textContent = t;
+  typeBox.classList.toggle("empty", !t);
+  typeBox.classList.toggle("bad", !!bad);
+  typeBox.scrollLeft = typeBox.scrollWidth;
 }
 
 function check() {
   if (!playing) return;
   const v = readInput();
   const p = v ? matcher(v) : 0;
-  input.classList.toggle("bad", p < 0);
   if (p === cur.target.length) return hit();
+  renderBox(p < 0);
   renderWord(Math.max(0, p));
 }
 
-// Phone keyboards keep the text they are still converting and write it back
-// after value = "". Blurring ends that conversion, and a brand-new input box
-// starts clean; moving focus straight to it keeps the keyboard open.
 function clearInput() {
-  const old = input, fresh = old.cloneNode(false);
-  const hadFocus = document.activeElement === old;
   const own = currentText();
-  stale = [...new Set([old.value, own])].filter(Boolean).sort((a, b) => b.length - a.length);
-  old.blur();
-  fresh.value = "";
-  fresh.classList.remove("bad");
-  old.removeAttribute("id");
-  old.after(fresh);
-  input = fresh;
-  if (hadFocus) fresh.focus();
-  old.hidden = true;
-  setTimeout(() => old.remove(), 500);
+  stale = [...new Set([input.value, own])].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!composing) input.value = "";
+  renderBox(false);
 }
 
 function hit() {
   clearInput();
-  input.classList.remove("bad");
   level++;
   sfx.ok();
   const now = performance.now();
@@ -639,17 +648,17 @@ function confetti() {
 
 // ---------------- events ----------------
 // listen on the form: the input element gets replaced after every word
-const typeForm = $("typeForm");
-typeForm.addEventListener("input", e => {
-  if (e.target !== input) return;
-  if (!e.isComposing) tidy();
-  check();
-});
-typeForm.addEventListener("compositionend", e => {
-  if (e.target !== input) return;
+input.addEventListener("compositionstart", () => { composing = true; });
+input.addEventListener("compositionend", () => {
+  composing = false;
   check();
   setTimeout(() => { tidy(); check(); }, 0);
 });
+input.addEventListener("input", e => {
+  if (!e.isComposing) tidy();
+  check();
+});
+input.addEventListener("blur", () => { composing = false; });
 $("typeForm").addEventListener("submit", e => {
   e.preventDefault();
   if (!playing) return;
