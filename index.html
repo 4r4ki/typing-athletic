@@ -499,6 +499,8 @@ function nextWord() {
   $("romaji").textContent = course.abc ? "" : romajiHint(cur.target);
   $("romaji").hidden = course.abc || !showRomaji;
   renderWord(0);
+  // redraw the box with the new word's matcher: with the old one, the finished word still reads as valid and stays on screen
+  renderBox(false);
 }
 function renderWord(done) {
   const chars = Array.from(cur.word);
@@ -585,7 +587,6 @@ function check() {
 function clearInput() {
   rememberWord();
   if (!composing) input.value = "";
-  renderBox(false);
 }
 
 function hit() {
