@@ -144,7 +144,8 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
 .type-wrap:focus-within .type-box.empty::after { order: -1; margin: 0 4px 0 0; }
 .type-box.bad { border-color: var(--ng) !important; background: #fff4f2; }
 @keyframes blink { 50% { opacity: 0; } }
-#typeInput { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; border: 0; padding: 0 14px; background: transparent; color: transparent; caret-color: transparent; }
+#typeInput, #imeSink { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; border: 0; padding: 0 14px; background: transparent; color: transparent; caret-color: transparent; }
+#imeSink { pointer-events: none; }
 .pass-btn { flex: none; border: 3px solid var(--line); background: var(--card); border-radius: 14px; padding: 0 14px; font-weight: 800; font-size: .95rem; }
 
 /* ---------- overlays ---------- */
@@ -213,6 +214,7 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
       <div class="type-wrap">
         <div class="type-box empty" id="typeBox" aria-hidden="true"></div>
         <input id="typeInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="ことばを入力">
+        <input id="imeSink" type="text" tabindex="-1" aria-hidden="true" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <button class="pass-btn" id="passBtn" type="button">パス</button>
     </form>
@@ -375,7 +377,7 @@ const sfx = {
 // ---------------- DOM ----------------
 const $ = id => document.getElementById(id);
 const app = $("app"), scene = $("scene"), world = $("world");
-const input = $("typeInput"), typeBox = $("typeBox");
+const input = $("typeInput"), imeSink = $("imeSink"), typeBox = $("typeBox");
 const CLIMBER_SVG = `<svg viewBox="0 0 60 72" aria-hidden="true">
   <g class="limb legL"><rect x="21" y="50" width="7" height="16" rx="3" fill="#2d4a8a"/><rect x="19" y="63" width="11" height="6" rx="3" fill="#3a3a3a"/></g>
   <g class="limb legR"><rect x="32" y="50" width="7" height="16" rx="3" fill="#2d4a8a"/><rect x="31" y="63" width="11" height="6" rx="3" fill="#3a3a3a"/></g>
@@ -535,7 +537,7 @@ function startGame(key) {
 // "みかn" comes back as "みかんk"). So earlier words are recognised by whether
 // they read as that word, not by exact text, and skipped. This only kicks in
 // when the box does not already read as the start of the current word.
-let earlier = [], composing = false;
+let earlier = [], composing = false, resetting = false;
 function rememberWord() {
   if (!cur || !cur.target || !matcher) return;
   earlier.push({ m: matcher, len: cur.target.length });
@@ -576,7 +578,7 @@ function renderBox(bad) {
 }
 
 function check() {
-  if (!playing) return;
+  if (!playing || resetting) return;
   const v = readInput();
   const p = v ? matcher(v) : 0;
   if (p === cur.target.length) return hit();
@@ -584,9 +586,25 @@ function check() {
   renderWord(Math.max(0, p));
 }
 
+// Clearing value alone leaves the keyboard's unfinished text (IME composition)
+// alive, and the keyboard writes it back. Moving focus away ends the composition;
+// moving it to another text box (not just blur) keeps the phone keyboard open.
 function clearInput() {
   rememberWord();
-  if (!composing) input.value = "";
+  const hadFocus = document.activeElement === input;
+  resetting = true;
+  try {
+    if (hadFocus && composing) {
+      imeSink.inputMode = input.inputMode;
+      imeSink.focus({ preventScroll: true });
+    }
+    input.value = "";
+    composing = false;
+    if (hadFocus && document.activeElement !== input) input.focus({ preventScroll: true });
+    imeSink.value = "";
+  } finally {
+    resetting = false;
+  }
 }
 
 function hit() {
