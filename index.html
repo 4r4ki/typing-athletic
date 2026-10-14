@@ -132,6 +132,14 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 3px sol
 .word span.next { text-decoration: underline 3px var(--sun); text-underline-offset: 6px; }
 .romaji { font-size: .85rem; color: var(--ink-soft); letter-spacing: .08em; font-weight: 800; min-height: 1.1em; }
 .romaji[hidden] { display: none !important; }
+/* rhythm mode: one dot per beat the word may use; dots fill as beats go by */
+.beats { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.beats i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.beats i.past { background: var(--sun); }
+.beats i.half { box-shadow: 0 0 0 2px var(--ok); }
+.word-card.beat { animation: thump .18s ease-out; }
+@keyframes thump { 0% { transform: scale(1.025); border-color: var(--sun); } 100% { transform: scale(1); } }
+.opt select { margin-left: auto; flex: none; font: inherit; font-size: .9rem; padding: 4px 6px; border-radius: 8px; border: 2px solid var(--line); background: var(--card); color: var(--ink); }
 
 form.type-row { display: flex; gap: 8px; margin: 0; }
 /* The box the child sees is drawn by the app; the real input sits on top of it, invisible.
@@ -184,7 +192,7 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   #world, .climber { transition-duration: .01s !important; }
-  .cloud, .goal-flag::after, .newrec, .climber.cheer svg { animation: none !important; }
+  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .word-card.beat { animation: none !important; }
 }
 </style>
 
@@ -208,6 +216,7 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
       <div class="word-text">
         <div class="word" id="word" aria-live="polite"><span>い</span><span>ぬ</span></div>
         <div class="romaji" id="romaji">inu</div>
+        <div class="beats" id="beats" hidden aria-hidden="true"></div>
       </div>
     </div>
     <form class="type-row" id="typeForm" autocomplete="off">
@@ -228,6 +237,13 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
       <div class="courses" id="courses"></div>
       <div class="opts">
         <label class="opt"><input type="checkbox" id="optRomaji"> <span>ローマ字のヒントを出す<br><span class="sub">キーボードでローマ字入力するときに</span></span></label>
+        <label class="opt"><span>リズムモード<br><span class="sub">はくに合わせて入力しよう</span></span>
+          <select id="optRhythm">
+            <option value="0">なし</option>
+            <option value="70">ゆっくり</option>
+            <option value="90">ふつう</option>
+            <option value="110">はやい</option>
+          </select></label>
       </div>
     </div>
   </div>
@@ -239,9 +255,9 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
       <p class="lead" id="resultLead">30mのてっぺんまでのぼったよ！</p>
       <div class="newrec" id="newRec" hidden>しんきろく！</div>
       <div class="stats">
-        <div class="stat"><div class="k">タイム</div><div class="v" id="rTime">0.0</div></div>
-        <div class="stat"><div class="k">ミス</div><div class="v" id="rMiss">0</div></div>
-        <div class="stat"><div class="k">パス</div><div class="v" id="rPass">0</div></div>
+        <div class="stat"><div class="k" id="rK1">タイム</div><div class="v" id="rTime">0.0</div></div>
+        <div class="stat"><div class="k" id="rK2">ミス</div><div class="v" id="rMiss">0</div></div>
+        <div class="stat"><div class="k" id="rK3">パス</div><div class="v" id="rPass">0</div></div>
       </div>
       <div class="lead" id="rBest"></div>
       <div class="btn-row">
@@ -431,6 +447,7 @@ let course = null, queue = [], cur = null, matcher = null;
 let level = 0, passes = 0, misses = 0, startAt = 0, endAt = 0, tick = null, playing = false;
 let lastHit = 0;
 let showRomaji = store.get("climb-romaji", false);
+let rhythmBpm = store.get("climb-rhythm", 0);
 const best = store.get("climb-best", {});
 
 function placeClimber(i, instant) {
@@ -501,6 +518,7 @@ function nextWord() {
   $("romaji").textContent = course.abc ? "" : romajiHint(cur.target);
   $("romaji").hidden = course.abc || !showRomaji;
   renderWord(0);
+  if (beat) { cur.window = beatWindow(cur.target); cur.beats = 0; renderBeats(); }
   // redraw the box with the new word's matcher: with the old one, the finished word still reads as valid and stays on screen
   renderBox(false);
 }
@@ -513,12 +531,15 @@ function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.fl
 function startGame(key) {
   course = COURSES[key];
   course.key = key;
-  queue = []; level = 0; shownLevel = 0; passes = 0; misses = 0;
+  queue = []; level = 0; shownLevel = 0; passes = 0; misses = 0; perfects = 0; goods = 0;
+  stopBeat();
+  if (rhythmBpm) beat = { ms: 60000 / rhythmBpm, timer: 0 };
+  $("beats").hidden = !beat;
   climbChain = Promise.resolve();
   climber.className = "climber";
   placeClimber(0, true);
   $("height").textContent = 0;
-  $("courseName").textContent = `${course.lv} ${course.name}`;
+  $("courseName").textContent = `${beat ? "♪ " : ""}${course.lv} ${course.name}`;
   $("startScreen").hidden = true; $("resultScreen").hidden = true;
   earlier = [];
   clearInput();
@@ -530,6 +551,45 @@ function startGame(key) {
   startAt = performance.now();
   clearInterval(tick);
   tick = setInterval(() => { $("timer").textContent = fmt(performance.now() - startAt); }, 100);
+  if (beat) startBeat();
+}
+
+// ---------------- rhythm mode ----------------
+// A steady beat plays. Each word may use a number of beats (about two per kana);
+// finishing in the first half is "perfect", later is "good", running out is a miss.
+let beat = null, perfects = 0, goods = 0;
+function beatWindow(t) { return course.abc ? Math.max(4, t.length + 2) : Math.max(4, t.length * 2); }
+function startBeat() {
+  let next = performance.now() + beat.ms;
+  const run = () => {
+    if (!beat) return;
+    onBeat();
+    next += beat.ms;
+    beat.timer = setTimeout(run, Math.max(0, next - performance.now()));
+  };
+  beat.timer = setTimeout(run, beat.ms);
+}
+function stopBeat() { if (beat) clearTimeout(beat.timer); beat = null; }
+function onBeat() {
+  if (!playing) return;
+  cur.beats++;
+  beep([cur.beats === 1 ? 1320 : 990], "square", 0.04, 0.05);
+  const card = $("wordCard");
+  card.classList.remove("beat"); void card.offsetWidth; card.classList.add("beat");
+  if (cur.beats > cur.window) return timeUp();
+  renderBeats();
+}
+function renderBeats() {
+  const half = Math.ceil(cur.window / 2);
+  $("beats").innerHTML = Array.from({ length: cur.window }, (_, i) =>
+    `<i class="${i < cur.beats ? "past" : ""}${i === half - 1 ? " half" : ""}"></i>`).join("");
+}
+function timeUp() {
+  misses++;
+  sfx.miss();
+  bubble("おしい！");
+  clearInput();
+  nextWord();
 }
 
 // Phone keyboards keep the text they are still converting and may write it back
@@ -613,7 +673,13 @@ function hit() {
   sfx.ok();
   const now = performance.now();
   climbTo(level).then(() => {});
-  setTimeout(() => bubble(now - lastHit < 3500 && lastHit ? "はやい！" : PRAISE[Math.floor(Math.random() * PRAISE.length)]), reduced ? 0 : 900);
+  let say = now - lastHit < 3500 && lastHit ? "はやい！" : PRAISE[Math.floor(Math.random() * PRAISE.length)];
+  if (beat) {
+    const perfect = cur.beats <= Math.ceil(cur.window / 2);
+    if (perfect) perfects++; else goods++;
+    say = perfect ? "パーフェクト！" : "グッド！";
+  }
+  setTimeout(() => bubble(say), reduced ? 0 : 900);
   lastHit = now;
   if (level >= STEPS) return finish();
   nextWord();
@@ -621,6 +687,8 @@ function hit() {
 
 function finish() {
   playing = false;
+  const rhythm = !!beat;
+  stopBeat();
   endAt = performance.now();
   clearInterval(tick);
   const ms = endAt - startAt;
@@ -632,22 +700,33 @@ function finish() {
     sfx.goal();
     confetti();
     await wait(1500);
-    const prev = best[course.key];
-    const isNew = prev == null || ms < prev;
-    if (isNew) { best[course.key] = ms; store.set("climb-best", best); }
-    $("rTime").textContent = fmt(ms);
-    $("rMiss").textContent = misses;
-    $("rPass").textContent = passes;
-    $("newRec").hidden = !isNew;
     $("resultLead").textContent = `${STEPS * METER}mのてっぺんまでのぼったよ！`;
-    $("rBest").textContent = isNew && prev != null ? `まえのきろく ${fmt(prev)}びょう` : !isNew ? `じこベスト ${fmt(best[course.key])}びょう` : "";
+    if (rhythm) {
+      // the beat sets the pace, so rhythm runs are not compared with the best time
+      [["パーフェクト", perfects], ["グッド", goods], ["ミス", misses + passes]].forEach(([k, v], i) => {
+        $("rK" + (i + 1)).textContent = k;
+        $(["rTime", "rMiss", "rPass"][i]).textContent = v;
+      });
+      $("newRec").hidden = true;
+      $("rBest").textContent = misses + passes === 0 ? "ぜんぶリズムに間に合ったよ！" : "";
+    } else {
+      const prev = best[course.key];
+      const isNew = prev == null || ms < prev;
+      if (isNew) { best[course.key] = ms; store.set("climb-best", best); }
+      ["タイム", "ミス", "パス"].forEach((k, i) => { $("rK" + (i + 1)).textContent = k; });
+      $("rTime").textContent = fmt(ms);
+      $("rMiss").textContent = misses;
+      $("rPass").textContent = passes;
+      $("newRec").hidden = !isNew;
+      $("rBest").textContent = isNew && prev != null ? `まえのきろく ${fmt(prev)}びょう` : !isNew ? `じこベスト ${fmt(best[course.key])}びょう` : "";
+    }
     $("resultScreen").hidden = false;
     renderCourses();
   });
 }
 
 function goMenu() {
-  playing = false; clearInterval(tick);
+  playing = false; clearInterval(tick); stopBeat();
   input.blur();
   renderCourses();
   $("resultScreen").hidden = true;
@@ -725,6 +804,9 @@ $("soundBtn").style.opacity = soundOn ? 1 : 0.4;
 const optR = $("optRomaji");
 optR.checked = showRomaji;
 optR.addEventListener("change", () => { showRomaji = optR.checked; store.set("climb-romaji", showRomaji); });
+const optB = $("optRhythm");
+optB.value = String(rhythmBpm);
+optB.addEventListener("change", () => { rhythmBpm = +optB.value; store.set("climb-rhythm", rhythmBpm); });
 scene.addEventListener("click", () => { if (playing) input.focus(); });
 
 // keep the app inside the visible area when the phone keyboard opens
