@@ -132,19 +132,21 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 3px sol
 .word span.next { text-decoration: underline 3px var(--sun); text-underline-offset: 6px; }
 .romaji { font-size: .85rem; color: var(--ink-soft); letter-spacing: .08em; font-weight: 800; min-height: 1.1em; }
 .romaji[hidden] { display: none !important; }
-/* rhythm mode: letters slide in from the right, one per beat; type each as it reaches the ring */
-.lane { position: relative; height: 58px; border-radius: 14px; overflow: hidden; background: var(--sky-top); border: 2px solid var(--wood-dk); }
-.lane::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: rgba(255,255,255,.18); }
-.lane .ring { position: absolute; left: 22px; top: 50%; width: 50px; height: 50px; margin-top: -25px; border-radius: 50%; border: 4px solid var(--sun); background: rgba(255,200,58,.15); }
-.lane .ring.beat { animation: thump .2s ease-out; }
-@keyframes thump { from { transform: scale(1.15); background: rgba(255,200,58,.45); } }
-.note { position: absolute; left: 0; top: 50%; width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; display: grid; place-items: center;
-  background: #fff; border: 3px solid var(--sky-hi); font-family: var(--font-display); font-size: 1.2rem; color: var(--ink); will-change: transform; }
-.note.now { border-color: var(--berry); }
-.note.hit { animation: noteHit .3s ease-out forwards; }
-@keyframes noteHit { to { opacity: 0; transform: var(--at) scale(1.6); } }
-.judge { position: absolute; left: 80px; top: 4px; font-weight: 800; font-size: .85rem; color: var(--sun); pointer-events: none; }
-.judge.good { color: #9fe0ff; }
+/* rhythm mode: word pictures slide in from the right on the beat; type each word before its picture crosses the line */
+.lane { position: relative; height: 76px; border-radius: 14px; overflow: hidden; background: var(--sky-top); border: 2px solid var(--wood-dk); }
+.lane .line { position: absolute; left: 14px; top: 6px; bottom: 6px; width: 6px; border-radius: 3px; background: var(--sun); }
+.lane .line.beat { animation: thump .2s ease-out; }
+@keyframes thump { from { transform: scaleX(1.8); box-shadow: 0 0 12px var(--sun); } }
+.card { position: absolute; left: 0; top: 50%; width: 64px; height: 62px; margin: -31px 0 0 -32px; border-radius: 12px; display: grid; place-items: center; align-content: center; gap: 1px;
+  background: #fff; border: 3px solid var(--sky-hi); will-change: transform; }
+.card .em { font-size: 1.7rem; line-height: 1; }
+.card .tx { font-size: .62rem; font-weight: 800; color: var(--ink); white-space: nowrap; max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
+.card.now { border-color: var(--berry); box-shadow: 0 0 0 3px rgba(255,90,110,.35); }
+.card.hit { animation: cardHit .35s ease-out forwards; }
+@keyframes cardHit { to { opacity: 0; transform: var(--at) translateY(-18px) scale(1.4); } }
+.card.missed { animation: cardMiss .5s ease-in forwards; background: #d9dde6; border-color: #8a93a3; }
+@keyframes cardMiss { to { opacity: 0; transform: var(--at) translateX(-40px); } }
+.judge { position: absolute; right: 8px; top: 4px; font-weight: 800; font-size: .85rem; color: var(--sun); pointer-events: none; }
 .judge.miss { color: #ff9a9a; }
 .opt select { margin-left: auto; flex: none; font: inherit; font-size: .9rem; padding: 4px 6px; border-radius: 8px; border: 2px solid var(--line); background: var(--card); color: var(--ink); }
 
@@ -199,7 +201,7 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   #world, .climber { transition-duration: .01s !important; }
-  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .lane .ring.beat, .note.hit { animation: none !important; }
+  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .lane .line.beat, .card.hit, .card.missed { animation: none !important; }
 }
 </style>
 
@@ -218,7 +220,7 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
   </div>
 
   <div class="panel">
-    <div class="lane" id="lane" hidden aria-hidden="true"><div class="ring" id="ring"></div><div class="judge" id="judge"></div></div>
+    <div class="lane" id="lane" hidden aria-hidden="true"><div class="line" id="beatLine"></div><div class="judge" id="judge"></div></div>
     <div class="word-card" id="wordCard">
       <div class="pic" id="pic">🐶</div>
       <div class="word-text">
@@ -543,7 +545,7 @@ function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.fl
 function startGame(key) {
   course = COURSES[key];
   course.key = key;
-  queue = []; level = 0; shownLevel = 0; passes = 0; misses = 0; perfects = 0; goods = 0;
+  queue = []; level = 0; shownLevel = 0; passes = 0; misses = 0; clears = 0;
   stopBeat();
   lastPicked = "";
   if (rhythmBpm) beat = { ms: 60000 / rhythmBpm, t0: performance.now() + 400, last: -1, flow: [], end: COUNT_IN, raf: 0 };
@@ -568,28 +570,26 @@ function startGame(key) {
 }
 
 // ---------------- rhythm mode ----------------
-// Words flow in from the right as a line of letters, one letter per beat, with a
-// short rest between words. Each letter is judged when the typing gets past it:
-// close to the ring is "perfect", otherwise "good". A letter that drifts too far
-// past the ring drops the rest of that word.
-const COUNT_IN = 4, REST = 2, PX_PER_BEAT = 58, RING_X = 47, PERFECT = 0.35, TOO_LATE = 1.5;
-let beat = null, perfects = 0, goods = 0;
-const noteTime = (w, k) => beat.t0 + (w.start + k) * beat.ms;
+// The word pictures flow in from the right on a steady beat. Type the front word
+// before its picture reaches the line on the left; if it gets there first, the
+// word is missed and the next one comes up. Longer words get more beats.
+const COUNT_IN = 4, PX_PER_BEAT = 34, LINE_X = 20, CARD_HALF = 32;
+let beat = null, clears = 0;
+function wordBeats(t) { return course.abc ? Math.max(4, t.length + 2) : Math.max(4, t.length * 2); }
+const dueTime = w => beat.t0 + w.due * beat.ms;
 function nextFlowWord() {
   while (beat.flow.length < 4) {
-    const w = pickWord(), chars = Array.from(w.word);
-    w.start = beat.end; w.judged = 0; w.perfect = true;
-    beat.end += chars.length + REST;
-    w.els = chars.map(c => {
-      const el = document.createElement("div");
-      el.className = "note"; el.textContent = c;
-      $("lane").appendChild(el);
-      return el;
-    });
+    const w = pickWord();
+    beat.end += wordBeats(w.target);
+    w.due = beat.end;
+    w.el = document.createElement("div");
+    w.el.className = "card";
+    w.el.innerHTML = `<span class="em">${w.pic}</span><span class="tx">${w.word}</span>`;
+    $("lane").appendChild(w.el);
     beat.flow.push(w);
   }
   const w = beat.flow.shift();
-  w.els.forEach(el => el.classList.add("now"));
+  w.el.classList.add("now");
   return w;
 }
 function frame(now) {
@@ -598,56 +598,45 @@ function frame(now) {
   if (b > beat.last) {
     beat.last = b;
     if (b >= 0) {
-      const onNote = [cur, ...beat.flow].some(w => b >= w.start && b < w.start + w.els.length);
-      beep([onNote ? 1320 : 880], "square", 0.04, onNote ? 0.06 : 0.035);
-      const ring = $("ring");
-      ring.classList.remove("beat"); void ring.offsetWidth; ring.classList.add("beat");
+      beep([b % 4 === 0 ? 1320 : 880], "square", 0.04, b % 4 === 0 ? 0.06 : 0.035);
+      const line = $("beatLine");
+      line.classList.remove("beat"); void line.offsetWidth; line.classList.add("beat");
     }
   }
   const width = $("lane").clientWidth;
   for (const w of [cur, ...beat.flow]) {
-    w.els.forEach((el, k) => {
-      const x = RING_X + (noteTime(w, k) - now) / beat.ms * PX_PER_BEAT;
-      el.style.setProperty("--at", `translateX(${x}px)`);
-      if (!el.classList.contains("hit")) el.style.transform = `translateX(${x}px)`;
-      el.style.visibility = x > width + 30 ? "hidden" : "";
-    });
+    const x = LINE_X + CARD_HALF + (dueTime(w) - now) / beat.ms * PX_PER_BEAT;
+    w.el.style.transform = `translateX(${x}px)`;
+    w.el.style.setProperty("--at", `translateX(${x}px)`);
+    w.el.style.visibility = x > width + CARD_HALF ? "hidden" : "";
   }
-  if (cur.judged < cur.els.length && now - noteTime(cur, cur.judged) > TOO_LATE * beat.ms) dropWord(false);
+  if (now >= dueTime(cur)) dropWord(false);
   if (playing) beat.raf = requestAnimationFrame(frame);
-}
-// letters [cur.judged, done) were just typed
-function judgeLetters(done) {
-  const now = performance.now();
-  for (; cur.judged < done; cur.judged++) {
-    const off = (now - noteTime(cur, cur.judged)) / beat.ms;
-    const perfect = Math.abs(off) <= PERFECT;
-    if (perfect) perfects++; else { goods++; cur.perfect = false; }
-    showJudge(perfect ? "パーフェクト" : off < 0 ? "はやい" : "おそい", perfect ? "" : "good");
-    const el = cur.els[cur.judged];
-    el.classList.add("hit");
-    setTimeout(() => el.remove(), 320);
-  }
 }
 function showJudge(text, kind) {
   const j = $("judge");
   j.textContent = text; j.className = "judge " + kind;
   clearTimeout(showJudge.t);
-  showJudge.t = setTimeout(() => { j.textContent = ""; }, 500);
+  showJudge.t = setTimeout(() => { j.textContent = ""; }, 700);
 }
-// the word ran out of time (or was passed): its remaining letters go away
+function leaveLane(w, how) {
+  const el = w.el;
+  el.style.transform = "";
+  el.classList.remove("now"); el.classList.add(how);
+  setTimeout(() => el.remove(), 500);
+}
+// the picture reached the line first (or the word was passed)
 function dropWord(passed) {
-  misses += cur.els.length - cur.judged;
   if (passed) passes++;
-  else { sfx.miss(); showJudge("ミス", "miss"); bubble("おしい！"); }
-  cur.els.forEach(el => el.remove());
+  else { misses++; sfx.miss(); showJudge("にがした…", "miss"); bubble("おしい！"); }
+  leaveLane(cur, "missed");
   clearInput();
   nextWord();
 }
 function stopBeat() {
   if (!beat) return;
   cancelAnimationFrame(beat.raf);
-  for (const w of [cur, ...beat.flow]) if (w && w.els) w.els.forEach(el => el.remove());
+  for (const w of [cur, ...beat.flow]) if (w && w.el) w.el.remove();
   beat = null;
 }
 
@@ -700,7 +689,6 @@ function check() {
   if (!playing || resetting) return;
   const v = readInput();
   const p = v ? matcher(v) : 0;
-  if (beat && p > cur.judged) judgeLetters(Math.min(p, cur.els.length));
   if (p === cur.target.length) return hit();
   renderBox(p < 0);
   renderWord(Math.max(0, p));
@@ -734,7 +722,13 @@ function hit() {
   const now = performance.now();
   climbTo(level).then(() => {});
   let say = now - lastHit < 3500 && lastHit ? "はやい！" : PRAISE[Math.floor(Math.random() * PRAISE.length)];
-  if (beat) say = cur.perfect ? "パーフェクト！" : "グッド！";
+  if (beat) {
+    clears++;
+    const left = (dueTime(cur) - now) / beat.ms;
+    say = left < 1.5 ? "ギリギリ！" : say;
+    showJudge(left < 1.5 ? "ギリギリセーフ" : "ゲット！", "");
+    leaveLane(cur, "hit");
+  }
   setTimeout(() => bubble(say), reduced ? 0 : 900);
   lastHit = now;
   if (level >= STEPS) return finish();
@@ -759,12 +753,12 @@ function finish() {
     $("resultLead").textContent = `${STEPS * METER}mのてっぺんまでのぼったよ！`;
     if (rhythm) {
       // the beat sets the pace, so rhythm runs are not compared with the best time
-      [["パーフェクト", perfects], ["グッド", goods], ["ミス", misses]].forEach(([k, v], i) => {
+      [["ゲット", clears], ["にがした", misses], ["パス", passes]].forEach(([k, v], i) => {
         $("rK" + (i + 1)).textContent = k;
         $(["rTime", "rMiss", "rPass"][i]).textContent = v;
       });
       $("newRec").hidden = true;
-      $("rBest").textContent = !misses && !goods ? "ぜんぶパーフェクト！" : !misses ? "ぜんぶリズムに間に合ったよ！" : "";
+      $("rBest").textContent = !misses && !passes ? "ひとつもにがさなかったよ！" : "";
     } else {
       const prev = best[course.key];
       const isNew = prev == null || ms < prev;
