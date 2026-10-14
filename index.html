@@ -132,13 +132,20 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 3px sol
 .word span.next { text-decoration: underline 3px var(--sun); text-underline-offset: 6px; }
 .romaji { font-size: .85rem; color: var(--ink-soft); letter-spacing: .08em; font-weight: 800; min-height: 1.1em; }
 .romaji[hidden] { display: none !important; }
-/* rhythm mode: one dot per beat the word may use; dots fill as beats go by */
-.beats { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.beats i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
-.beats i.past { background: var(--sun); }
-.beats i.half { box-shadow: 0 0 0 2px var(--ok); }
-.word-card.beat { animation: thump .18s ease-out; }
-@keyframes thump { 0% { transform: scale(1.025); border-color: var(--sun); } 100% { transform: scale(1); } }
+/* rhythm mode: letters slide in from the right, one per beat; type each as it reaches the ring */
+.lane { position: relative; height: 58px; border-radius: 14px; overflow: hidden; background: var(--sky-top); border: 2px solid var(--wood-dk); }
+.lane::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: rgba(255,255,255,.18); }
+.lane .ring { position: absolute; left: 22px; top: 50%; width: 50px; height: 50px; margin-top: -25px; border-radius: 50%; border: 4px solid var(--sun); background: rgba(255,200,58,.15); }
+.lane .ring.beat { animation: thump .2s ease-out; }
+@keyframes thump { from { transform: scale(1.15); background: rgba(255,200,58,.45); } }
+.note { position: absolute; left: 0; top: 50%; width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; display: grid; place-items: center;
+  background: #fff; border: 3px solid var(--sky-hi); font-family: var(--font-display); font-size: 1.2rem; color: var(--ink); will-change: transform; }
+.note.now { border-color: var(--berry); }
+.note.hit { animation: noteHit .3s ease-out forwards; }
+@keyframes noteHit { to { opacity: 0; transform: var(--at) scale(1.6); } }
+.judge { position: absolute; left: 80px; top: 4px; font-weight: 800; font-size: .85rem; color: var(--sun); pointer-events: none; }
+.judge.good { color: #9fe0ff; }
+.judge.miss { color: #ff9a9a; }
 .opt select { margin-left: auto; flex: none; font: inherit; font-size: .9rem; padding: 4px 6px; border-radius: 8px; border: 2px solid var(--line); background: var(--card); color: var(--ink); }
 
 form.type-row { display: flex; gap: 8px; margin: 0; }
@@ -192,7 +199,7 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   #world, .climber { transition-duration: .01s !important; }
-  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .word-card.beat { animation: none !important; }
+  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .lane .ring.beat, .note.hit { animation: none !important; }
 }
 </style>
 
@@ -211,12 +218,12 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
   </div>
 
   <div class="panel">
+    <div class="lane" id="lane" hidden aria-hidden="true"><div class="ring" id="ring"></div><div class="judge" id="judge"></div></div>
     <div class="word-card" id="wordCard">
       <div class="pic" id="pic">🐶</div>
       <div class="word-text">
         <div class="word" id="word" aria-live="polite"><span>い</span><span>ぬ</span></div>
         <div class="romaji" id="romaji">inu</div>
-        <div class="beats" id="beats" hidden aria-hidden="true"></div>
       </div>
     </div>
     <form class="type-row" id="typeForm" autocomplete="off">
@@ -240,9 +247,9 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
         <label class="opt"><span>リズムモード<br><span class="sub">はくに合わせて入力しよう</span></span>
           <select id="optRhythm">
             <option value="0">なし</option>
-            <option value="70">ゆっくり</option>
-            <option value="90">ふつう</option>
-            <option value="110">はやい</option>
+            <option value="60">ゆっくり</option>
+            <option value="80">ふつう</option>
+            <option value="100">はやい</option>
           </select></label>
       </div>
     </div>
@@ -448,6 +455,7 @@ let level = 0, passes = 0, misses = 0, startAt = 0, endAt = 0, tick = null, play
 let lastHit = 0;
 let showRomaji = store.get("climb-romaji", false);
 let rhythmBpm = store.get("climb-rhythm", 0);
+if (![0, 60, 80, 100].includes(rhythmBpm)) rhythmBpm = 80;
 const best = store.get("climb-best", {});
 
 function placeClimber(i, instant) {
@@ -506,19 +514,23 @@ const PRAISE = ["ナイス！", "いいね！", "すごい！", "その調子！
 
 function fmt(ms) { return (ms / 1000).toFixed(1); }
 
-function nextWord() {
+let lastPicked = "";
+function pickWord() {
   if (!queue.length) queue = shuffle(course.list.slice());
   // never start with the same letter as the last word, so leftover text can't be mistaken for new typing
-  const prev = cur && cur.target ? cur.target[0] : "";
-  const i = queue.findLastIndex(w => normalize(w.word)[0] !== prev);
-  cur = queue.splice(i < 0 ? queue.length - 1 : i, 1)[0];
-  cur.target = normalize(cur.word);
+  const i = queue.findLastIndex(w => normalize(w.word)[0] !== lastPicked);
+  const w = { ...queue.splice(i < 0 ? queue.length - 1 : i, 1)[0] };
+  w.target = normalize(w.word);
+  lastPicked = w.target[0];
+  return w;
+}
+function nextWord() {
+  cur = beat ? nextFlowWord() : pickWord();
   matcher = makeMatcher(cur.target, course.abc);
   $("pic").textContent = cur.pic;
   $("romaji").textContent = course.abc ? "" : romajiHint(cur.target);
   $("romaji").hidden = course.abc || !showRomaji;
   renderWord(0);
-  if (beat) { cur.window = beatWindow(cur.target); cur.beats = 0; renderBeats(); }
   // redraw the box with the new word's matcher: with the old one, the finished word still reads as valid and stays on screen
   renderBox(false);
 }
@@ -533,8 +545,9 @@ function startGame(key) {
   course.key = key;
   queue = []; level = 0; shownLevel = 0; passes = 0; misses = 0; perfects = 0; goods = 0;
   stopBeat();
-  if (rhythmBpm) beat = { ms: 60000 / rhythmBpm, timer: 0 };
-  $("beats").hidden = !beat;
+  lastPicked = "";
+  if (rhythmBpm) beat = { ms: 60000 / rhythmBpm, t0: performance.now() + 400, last: -1, flow: [], end: COUNT_IN, raf: 0 };
+  $("lane").hidden = !beat;
   climbChain = Promise.resolve();
   climber.className = "climber";
   placeClimber(0, true);
@@ -551,45 +564,91 @@ function startGame(key) {
   startAt = performance.now();
   clearInterval(tick);
   tick = setInterval(() => { $("timer").textContent = fmt(performance.now() - startAt); }, 100);
-  if (beat) startBeat();
+  if (beat) beat.raf = requestAnimationFrame(frame);
 }
 
 // ---------------- rhythm mode ----------------
-// A steady beat plays. Each word may use a number of beats (about two per kana);
-// finishing in the first half is "perfect", later is "good", running out is a miss.
+// Words flow in from the right as a line of letters, one letter per beat, with a
+// short rest between words. Each letter is judged when the typing gets past it:
+// close to the ring is "perfect", otherwise "good". A letter that drifts too far
+// past the ring drops the rest of that word.
+const COUNT_IN = 4, REST = 2, PX_PER_BEAT = 58, RING_X = 47, PERFECT = 0.35, TOO_LATE = 1.5;
 let beat = null, perfects = 0, goods = 0;
-function beatWindow(t) { return course.abc ? Math.max(4, t.length + 2) : Math.max(4, t.length * 2); }
-function startBeat() {
-  let next = performance.now() + beat.ms;
-  const run = () => {
-    if (!beat) return;
-    onBeat();
-    next += beat.ms;
-    beat.timer = setTimeout(run, Math.max(0, next - performance.now()));
-  };
-  beat.timer = setTimeout(run, beat.ms);
+const noteTime = (w, k) => beat.t0 + (w.start + k) * beat.ms;
+function nextFlowWord() {
+  while (beat.flow.length < 4) {
+    const w = pickWord(), chars = Array.from(w.word);
+    w.start = beat.end; w.judged = 0; w.perfect = true;
+    beat.end += chars.length + REST;
+    w.els = chars.map(c => {
+      const el = document.createElement("div");
+      el.className = "note"; el.textContent = c;
+      $("lane").appendChild(el);
+      return el;
+    });
+    beat.flow.push(w);
+  }
+  const w = beat.flow.shift();
+  w.els.forEach(el => el.classList.add("now"));
+  return w;
 }
-function stopBeat() { if (beat) clearTimeout(beat.timer); beat = null; }
-function onBeat() {
-  if (!playing) return;
-  cur.beats++;
-  beep([cur.beats === 1 ? 1320 : 990], "square", 0.04, 0.05);
-  const card = $("wordCard");
-  card.classList.remove("beat"); void card.offsetWidth; card.classList.add("beat");
-  if (cur.beats > cur.window) return timeUp();
-  renderBeats();
+function frame(now) {
+  if (!beat || !playing) return;
+  const b = Math.floor((now - beat.t0) / beat.ms);
+  if (b > beat.last) {
+    beat.last = b;
+    if (b >= 0) {
+      const onNote = [cur, ...beat.flow].some(w => b >= w.start && b < w.start + w.els.length);
+      beep([onNote ? 1320 : 880], "square", 0.04, onNote ? 0.06 : 0.035);
+      const ring = $("ring");
+      ring.classList.remove("beat"); void ring.offsetWidth; ring.classList.add("beat");
+    }
+  }
+  const width = $("lane").clientWidth;
+  for (const w of [cur, ...beat.flow]) {
+    w.els.forEach((el, k) => {
+      const x = RING_X + (noteTime(w, k) - now) / beat.ms * PX_PER_BEAT;
+      el.style.setProperty("--at", `translateX(${x}px)`);
+      if (!el.classList.contains("hit")) el.style.transform = `translateX(${x}px)`;
+      el.style.visibility = x > width + 30 ? "hidden" : "";
+    });
+  }
+  if (cur.judged < cur.els.length && now - noteTime(cur, cur.judged) > TOO_LATE * beat.ms) dropWord(false);
+  if (playing) beat.raf = requestAnimationFrame(frame);
 }
-function renderBeats() {
-  const half = Math.ceil(cur.window / 2);
-  $("beats").innerHTML = Array.from({ length: cur.window }, (_, i) =>
-    `<i class="${i < cur.beats ? "past" : ""}${i === half - 1 ? " half" : ""}"></i>`).join("");
+// letters [cur.judged, done) were just typed
+function judgeLetters(done) {
+  const now = performance.now();
+  for (; cur.judged < done; cur.judged++) {
+    const off = (now - noteTime(cur, cur.judged)) / beat.ms;
+    const perfect = Math.abs(off) <= PERFECT;
+    if (perfect) perfects++; else { goods++; cur.perfect = false; }
+    showJudge(perfect ? "パーフェクト" : off < 0 ? "はやい" : "おそい", perfect ? "" : "good");
+    const el = cur.els[cur.judged];
+    el.classList.add("hit");
+    setTimeout(() => el.remove(), 320);
+  }
 }
-function timeUp() {
-  misses++;
-  sfx.miss();
-  bubble("おしい！");
+function showJudge(text, kind) {
+  const j = $("judge");
+  j.textContent = text; j.className = "judge " + kind;
+  clearTimeout(showJudge.t);
+  showJudge.t = setTimeout(() => { j.textContent = ""; }, 500);
+}
+// the word ran out of time (or was passed): its remaining letters go away
+function dropWord(passed) {
+  misses += cur.els.length - cur.judged;
+  if (passed) passes++;
+  else { sfx.miss(); showJudge("ミス", "miss"); bubble("おしい！"); }
+  cur.els.forEach(el => el.remove());
   clearInput();
   nextWord();
+}
+function stopBeat() {
+  if (!beat) return;
+  cancelAnimationFrame(beat.raf);
+  for (const w of [cur, ...beat.flow]) if (w && w.els) w.els.forEach(el => el.remove());
+  beat = null;
 }
 
 // Phone keyboards keep the text they are still converting and may write it back
@@ -641,6 +700,7 @@ function check() {
   if (!playing || resetting) return;
   const v = readInput();
   const p = v ? matcher(v) : 0;
+  if (beat && p > cur.judged) judgeLetters(Math.min(p, cur.els.length));
   if (p === cur.target.length) return hit();
   renderBox(p < 0);
   renderWord(Math.max(0, p));
@@ -674,11 +734,7 @@ function hit() {
   const now = performance.now();
   climbTo(level).then(() => {});
   let say = now - lastHit < 3500 && lastHit ? "はやい！" : PRAISE[Math.floor(Math.random() * PRAISE.length)];
-  if (beat) {
-    const perfect = cur.beats <= Math.ceil(cur.window / 2);
-    if (perfect) perfects++; else goods++;
-    say = perfect ? "パーフェクト！" : "グッド！";
-  }
+  if (beat) say = cur.perfect ? "パーフェクト！" : "グッド！";
   setTimeout(() => bubble(say), reduced ? 0 : 900);
   lastHit = now;
   if (level >= STEPS) return finish();
@@ -703,12 +759,12 @@ function finish() {
     $("resultLead").textContent = `${STEPS * METER}mのてっぺんまでのぼったよ！`;
     if (rhythm) {
       // the beat sets the pace, so rhythm runs are not compared with the best time
-      [["パーフェクト", perfects], ["グッド", goods], ["ミス", misses + passes]].forEach(([k, v], i) => {
+      [["パーフェクト", perfects], ["グッド", goods], ["ミス", misses]].forEach(([k, v], i) => {
         $("rK" + (i + 1)).textContent = k;
         $(["rTime", "rMiss", "rPass"][i]).textContent = v;
       });
       $("newRec").hidden = true;
-      $("rBest").textContent = misses + passes === 0 ? "ぜんぶリズムに間に合ったよ！" : "";
+      $("rBest").textContent = !misses && !goods ? "ぜんぶパーフェクト！" : !misses ? "ぜんぶリズムに間に合ったよ！" : "";
     } else {
       const prev = best[course.key];
       const isNew = prev == null || ms < prev;
@@ -783,6 +839,7 @@ $("typeForm").addEventListener("submit", e => {
 });
 $("passBtn").addEventListener("click", () => {
   if (!playing) return;
+  if (beat) { dropWord(true); input.focus(); return; }
   passes++;
   clearInput();
   nextWord();
