@@ -197,11 +197,25 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
 .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .big-btn { border: 3px solid var(--wood-dk); border-radius: 16px; background: var(--sun); font-weight: 800; font-size: 1.05rem; padding: 14px 8px; box-shadow: 0 4px 0 var(--wood-dk); }
 .big-btn.alt { background: var(--card); }
+/* collected words (rhythm mode) and the collection book */
+.chip.bump { animation: bump .35s ease-out; }
+@keyframes bump { 40% { transform: scale(1.3); background: var(--sun); } }
+.got-title { font-weight: 800; text-align: center; margin: 0; }
+.got-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 6px; }
+.gw { position: relative; background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 6px 2px 4px; text-align: center; display: grid; gap: 2px; }
+.gw .em { font-size: 1.6rem; line-height: 1.1; }
+.gw .tx { font-size: .66rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw.new::after { content: "NEW"; position: absolute; top: -7px; right: -4px; background: var(--berry); color: #fff; font-size: .6rem; font-weight: 800; border-radius: 999px; padding: 0 5px; }
+.gw.unknown { background: #eef0f4; border-style: dashed; }
+.gw.unknown .em, .gw.unknown .tx { color: #a3abb9; }
+.zukan-course { display: grid; gap: 8px; }
+.zukan-course h2 { margin: 6px 0 0; font-size: 1rem; display: flex; justify-content: space-between; align-items: baseline; }
+.zukan-course h2 small { font-size: .8rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .big-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--wood-dk); }
 
 @media (prefers-reduced-motion: reduce) {
   #world, .climber { transition-duration: .01s !important; }
-  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .lane .line.beat, .card.hit, .card.missed { animation: none !important; }
+  .cloud, .goal-flag::after, .newrec, .climber.cheer svg, .chip.bump, .lane .line.beat, .card.hit, .card.missed { animation: none !important; }
 }
 </style>
 
@@ -210,7 +224,8 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
     <button class="icon-btn" id="quitBtn" type="button" aria-label="コースえらびにもどる">✕</button>
     <span class="course" id="courseName">コースをえらんでね</span>
     <span class="chip">⛰ <b id="height">0</b>m</span>
-    <span class="chip">⏱ <b id="timer">0.0</b></span>
+    <span class="chip" id="bagChip" hidden aria-label="ゲットしたことば">🎒 <b id="bag">0</b></span>
+    <span class="chip" id="timerChip">⏱ <b id="timer">0.0</b></span>
     <button class="icon-btn" id="soundBtn" type="button" aria-label="音のオン・オフ">♪</button>
   </div>
 
@@ -256,6 +271,15 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
             <option value="160">ちょうはやい</option>
           </select></label>
       </div>
+      <button class="big-btn alt" id="zukanBtn" type="button">📖 ずかん</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="zukanScreen" hidden>
+    <div class="sheet">
+      <h1 class="title"><small>リズムモードでゲットしたことば</small>ことばずかん</h1>
+      <div id="zukanList"></div>
+      <button class="big-btn" id="zukanClose" type="button">もどる</button>
     </div>
   </div>
 
@@ -271,6 +295,10 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
         <div class="stat"><div class="k" id="rK3">パス</div><div class="v" id="rPass">0</div></div>
       </div>
       <div class="lead" id="rBest"></div>
+      <div id="gotBox" hidden>
+        <p class="got-title">ゲットしたことば</p>
+        <div class="got-grid" id="gotGrid"></div>
+      </div>
       <div class="btn-row">
         <button class="big-btn" id="againBtn" type="button">もういちど</button>
         <button class="big-btn alt" id="menuBtn" type="button">コースをえらぶ</button>
@@ -552,6 +580,10 @@ function startGame(key) {
   lastPicked = "";
   if (rhythmBpm) beat = { ms: 60000 / rhythmBpm, t0: performance.now() + 400, last: -1, flow: [], end: COUNT_IN, raf: 0 };
   $("lane").hidden = !beat;
+  got = [];
+  $("bag").textContent = 0;
+  $("bagChip").hidden = !beat;
+  $("timerChip").hidden = !!beat;   // rhythm runs are not timed for records
   climbChain = Promise.resolve();
   climber.className = "climber";
   placeClimber(0, true);
@@ -577,6 +609,32 @@ function startGame(key) {
 // word is missed and the next one comes up. Longer words get more beats.
 const COUNT_IN = 4, PX_PER_BEAT = 34, LINE_X = 20, CARD_HALF = 32;
 let beat = null, clears = 0;
+// words got in time are collected: this run's list, plus a book that keeps them across runs
+const zukan = store.get("climb-zukan", {});
+let got = [];
+function collect(w) {
+  const book = zukan[course.key] || (zukan[course.key] = []);
+  const isNew = !book.includes(w.word);
+  if (isNew) { book.push(w.word); store.set("climb-zukan", zukan); }
+  got.push({ pic: w.pic, word: w.word, isNew });
+  $("bag").textContent = got.length;
+  const chip = $("bagChip");
+  chip.classList.remove("bump"); void chip.offsetWidth; chip.classList.add("bump");
+}
+const esc = t => t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const wordTile = (w, cls = "") => `<div class="gw ${cls}"><span class="em">${w.pic}</span><span class="tx">${esc(w.word)}</span></div>`;
+function renderZukan() {
+  $("zukanList").innerHTML = Object.entries(COURSES).map(([k, c]) => {
+    const book = zukan[k] || [];
+    const tiles = c.list.map(w => book.includes(w.word) ? wordTile(w) : wordTile({ pic: "？", word: "？？？" }, "unknown")).join("");
+    return `<section class="zukan-course"><h2>${c.lv} ${c.name}<small>${c.list.filter(w => book.includes(w.word)).length} / ${c.list.length}</small></h2><div class="got-grid">${tiles}</div></section>`;
+  }).join("");
+}
+function zukanCount() {
+  let n = 0, all = 0;
+  for (const [k, c] of Object.entries(COURSES)) { all += c.list.length; n += c.list.filter(w => (zukan[k] || []).includes(w.word)).length; }
+  return `${n} / ${all}`;
+}
 function wordBeats(t) { return course.abc ? Math.max(4, t.length + 2) : Math.max(4, t.length * 2); }
 const dueTime = w => beat.t0 + w.due * beat.ms;
 function nextFlowWord() {
@@ -730,6 +788,7 @@ function hit() {
     say = left < 1.5 ? "ギリギリ！" : say;
     showJudge(left < 1.5 ? "ギリギリセーフ" : "ゲット！", "");
     leaveLane(cur, "hit");
+    collect(cur);
   }
   setTimeout(() => bubble(say), reduced ? 0 : 900);
   lastHit = now;
@@ -761,7 +820,10 @@ function finish() {
       });
       $("newRec").hidden = true;
       $("rBest").textContent = !misses && !passes ? "ひとつもにがさなかったよ！" : "";
+      $("gotGrid").innerHTML = got.map(w => wordTile(w, w.isNew ? "new" : "")).join("");
+      $("gotBox").hidden = false;
     } else {
+      $("gotBox").hidden = true;
       const prev = best[course.key];
       const isNew = prev == null || ms < prev;
       if (isNew) { best[course.key] = ms; store.set("climb-best", best); }
@@ -786,6 +848,7 @@ function goMenu() {
 }
 
 function renderCourses() {
+  $("zukanBtn").textContent = `📖 ことばずかん（${zukanCount()}）`;
   $("courses").innerHTML = Object.entries(COURSES).map(([k, c]) => `
     <button class="course-btn" type="button" data-course="${k}" style="--c:${c.color}">
       <span class="lv">${c.lv}</span><span class="nm">${c.name}</span><span class="ex">${c.ex}</span>
@@ -847,6 +910,8 @@ $("courses").addEventListener("click", e => {
 });
 $("againBtn").addEventListener("click", () => startGame(course.key));
 $("menuBtn").addEventListener("click", goMenu);
+$("zukanBtn").addEventListener("click", () => { renderZukan(); $("zukanScreen").hidden = false; $("zukanScreen").scrollTop = 0; });
+$("zukanClose").addEventListener("click", () => { $("zukanScreen").hidden = true; });
 $("quitBtn").addEventListener("click", goMenu);
 $("soundBtn").addEventListener("click", () => {
   soundOn = !soundOn; store.set("climb-sound", soundOn);
