@@ -252,6 +252,8 @@ form.type-row { display: flex; gap: 8px; margin: 0; }
             <option value="60">ゆっくり</option>
             <option value="80">ふつう</option>
             <option value="100">はやい</option>
+            <option value="130">すごくはやい</option>
+            <option value="160">ちょうはやい</option>
           </select></label>
       </div>
     </div>
@@ -457,7 +459,7 @@ let level = 0, passes = 0, misses = 0, startAt = 0, endAt = 0, tick = null, play
 let lastHit = 0;
 let showRomaji = store.get("climb-romaji", false);
 let rhythmBpm = store.get("climb-rhythm", 0);
-if (![0, 60, 80, 100].includes(rhythmBpm)) rhythmBpm = 80;
+if (![0, 60, 80, 100, 130, 160].includes(rhythmBpm)) rhythmBpm = 80;
 const best = store.get("climb-best", {});
 
 function placeClimber(i, instant) {
