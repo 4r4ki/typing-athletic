@@ -707,6 +707,8 @@ function stopBeat() {
 // they read as that word, not by exact text, and skipped. This only kicks in
 // when the box does not already read as the start of the current word.
 let earlier = [], composing = false, resetting = false;
+// text left in the box by a timeout while the keyboard was still converting (see clearInput)
+let stale = "";
 function rememberWord() {
   if (!cur || !cur.target || !matcher) return;
   earlier.push({ m: matcher, len: cur.target.length });
@@ -714,6 +716,7 @@ function rememberWord() {
 }
 function currentText() {
   let rest = input.value;
+  if (stale && rest.startsWith(stale)) rest = rest.slice(stale.length);
   if (!rest || !earlier.length || matcher(normalize(rest)) >= 0) return rest;
   for (let changed = true; changed && rest;) {
     // an earlier word, whole or only begun (time ran out on it), right in front of the current word
@@ -738,6 +741,7 @@ function currentText() {
 function tidy() {
   if (composing) return;
   const rest = currentText();
+  stale = "";
   if (rest !== input.value) input.value = rest;
 }
 function readInput() {
@@ -763,15 +767,18 @@ function check() {
 // Clearing value alone leaves the keyboard's unfinished text (IME composition)
 // alive, and the keyboard writes it back. Moving focus away ends the composition;
 // moving it to another text box (not just blur) keeps the phone keyboard open.
-// Only do that from a tap or key press: outside one (the rhythm timeout), iPhone
-// lets focus move to the other box but not come back, and typing goes nowhere.
-// Without it, text the keyboard writes back is skipped by currentText instead.
+// Only do that from a tap or key press. On a rhythm timeout, iPhone Safari stops
+// taking typing if focus moves or the value changes mid-conversion, so the box
+// is left alone: its text is remembered as stale and skipped by currentText,
+// and tidy clears it once the keyboard has finished converting.
 function clearInput(fromUser = true) {
   rememberWord();
   const hadFocus = document.activeElement === input;
+  if (!fromUser && hadFocus && composing) { stale = input.value; return; }
+  stale = "";
   resetting = true;
   try {
-    const sink = hadFocus && composing && fromUser;
+    const sink = hadFocus && composing;
     if (sink) {
       imeSink.inputMode = input.inputMode;
       imeSink.focus({ preventScroll: true });
