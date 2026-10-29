@@ -687,6 +687,7 @@ function leaveLane(w, how) {
 }
 // the picture reached the line first (or the word was passed)
 function dropWord(passed) {
+  dbg(`drop passed=${passed}`);
   if (passed) passes++;
   else { misses++; sfx.miss(); showJudge("にがした…", "miss"); bubble("おしい！"); }
   leaveLane(cur, "missed");
@@ -770,11 +771,13 @@ function check() {
 // Only do that from a tap or key press. On a rhythm timeout, iPhone Safari stops
 // taking typing if focus moves or the value changes mid-conversion, so the box
 // is left alone: its text is remembered as stale and skipped by currentText,
-// and tidy clears it once the keyboard has finished converting.
+// and tidy clears it once the keyboard has finished converting. Some keyboards
+// convert without telling the page, so this goes for any text left on a timeout.
 function clearInput(fromUser = true) {
   rememberWord();
   const hadFocus = document.activeElement === input;
-  if (!fromUser && hadFocus && composing) { stale = input.value; return; }
+  dbg(`clear user=${fromUser} focus=${hadFocus} comp=${composing} val=${JSON.stringify(input.value)}`);
+  if (!fromUser && hadFocus && input.value) { stale = input.value; return; }
   stale = "";
   resetting = true;
   try {
@@ -967,5 +970,25 @@ course = COURSES.easy; course.key = "easy";
 cur = { pic: "🐶", word: "いぬ" };
 fit();
 placeClimber(0, true);
+// ---------------- debug (open the page with ?debug) ----------------
+// Shows what the keyboard and the page did, at the top of the screen, for finding phone-only bugs.
+function dbg(msg) {
+  if (!dbg.el) return;
+  dbg.lines.push(`${(performance.now() / 1000).toFixed(1)} ${msg}`);
+  if (dbg.lines.length > 16) dbg.lines.shift();
+  dbg.el.textContent = `ver 10/29-4 active=${document.activeElement && document.activeElement.id}\n` + dbg.lines.join("\n");
+}
+if (/[?&]debug\b/.test(location.search)) {
+  dbg.lines = [];
+  dbg.el = document.createElement("pre");
+  dbg.el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;margin:0;padding:4px;font:10px/1.3 monospace;white-space:pre-wrap;word-break:break-all;background:rgba(0,0,0,.75);color:#fff;pointer-events:none;max-height:45vh;overflow:hidden";
+  document.body.appendChild(dbg.el);
+  for (const [el, name] of [[input, "in"], [imeSink, "sink"]]) {
+    for (const ev of ["keydown", "beforeinput", "input", "compositionstart", "compositionupdate", "compositionend", "focus", "blur"]) {
+      el.addEventListener(ev, e => dbg(`${name} ${ev}${e.inputType ? " " + e.inputType : ""}${e.isComposing ? " C" : ""}${e.data != null ? " d=" + JSON.stringify(e.data) : ""}${e.key ? " k=" + e.key : ""} val=${JSON.stringify(el.value)} box=${JSON.stringify(typeBox.textContent)}`), true);
+    }
+  }
+  dbg("debug on");
+}
 })();
 </script>
