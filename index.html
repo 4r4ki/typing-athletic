@@ -690,7 +690,8 @@ function dropWord(passed) {
   if (passed) passes++;
   else { misses++; sfx.miss(); showJudge("にがした…", "miss"); bubble("おしい！"); }
   leaveLane(cur, "missed");
-  clearInput();
+  // a timeout is not a tap or key press, so the keyboard trick in clearInput is not safe here
+  clearInput(passed);
   nextWord();
 }
 function stopBeat() {
@@ -715,19 +716,22 @@ function currentText() {
   let rest = input.value;
   if (!rest || !earlier.length || matcher(normalize(rest)) >= 0) return rest;
   for (let changed = true; changed && rest;) {
+    // an earlier word, whole or only begun (time ran out on it), right in front of the current word
+    for (const w of earlier) {
+      for (let i = rest.length; i > 0; i--) {
+        if (w.m(normalize(rest.slice(0, i))) >= 0 && matcher(normalize(rest.slice(i))) >= 0) return rest.slice(i);
+      }
+    }
+    // otherwise peel off a whole earlier word and look again
     changed = false;
     for (const w of earlier) {
       for (let i = rest.length; i > 0; i--) {
-        const got = w.m(normalize(rest.slice(0, i)));
-        // a whole earlier word, or the unfinished start of one (left behind when time ran out) if what follows is the current word
-        if (got === w.len || (got >= 0 && matcher(normalize(rest.slice(i))) >= 0)) { rest = rest.slice(i); changed = true; break; }
+        if (w.m(normalize(rest.slice(0, i))) === w.len) { rest = rest.slice(i); changed = true; break; }
       }
       if (changed) break;
     }
     if (rest && matcher(normalize(rest)) >= 0) return rest;
   }
-  // only part of an earlier word is left (the keyboard is still holding it)
-  if (rest && earlier.some(w => w.m(normalize(rest)) >= 0)) return "";
   return rest;
 }
 // once the keyboard has finished converting, the real value can be cleaned too
@@ -759,17 +763,21 @@ function check() {
 // Clearing value alone leaves the keyboard's unfinished text (IME composition)
 // alive, and the keyboard writes it back. Moving focus away ends the composition;
 // moving it to another text box (not just blur) keeps the phone keyboard open.
-function clearInput() {
+// Only do that from a tap or key press: outside one (the rhythm timeout), iPhone
+// lets focus move to the other box but not come back, and typing goes nowhere.
+// Without it, text the keyboard writes back is skipped by currentText instead.
+function clearInput(fromUser = true) {
   rememberWord();
   const hadFocus = document.activeElement === input;
   resetting = true;
   try {
-    if (hadFocus && composing) {
+    const sink = hadFocus && composing && fromUser;
+    if (sink) {
       imeSink.inputMode = input.inputMode;
       imeSink.focus({ preventScroll: true });
     }
     input.value = "";
-    composing = false;
+    if (sink || !hadFocus) composing = false;
     if (hadFocus && document.activeElement !== input) input.focus({ preventScroll: true });
     imeSink.value = "";
   } finally {
@@ -887,6 +895,12 @@ input.addEventListener("input", e => {
   check();
 });
 input.addEventListener("blur", () => { composing = false; });
+// if focus was ever left on the hidden box, the next key press brings it back
+imeSink.addEventListener("input", () => {
+  if (resetting || !playing) return;
+  imeSink.value = "";
+  input.focus({ preventScroll: true });
+});
 $("typeForm").addEventListener("submit", e => {
   e.preventDefault();
   if (!playing) return;
