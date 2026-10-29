@@ -718,7 +718,9 @@ function currentText() {
     changed = false;
     for (const w of earlier) {
       for (let i = rest.length; i > 0; i--) {
-        if (w.m(normalize(rest.slice(0, i))) === w.len) { rest = rest.slice(i); changed = true; break; }
+        const got = w.m(normalize(rest.slice(0, i)));
+        // a whole earlier word, or the unfinished start of one (left behind when time ran out) if what follows is the current word
+        if (got === w.len || (got >= 0 && matcher(normalize(rest.slice(i))) >= 0)) { rest = rest.slice(i); changed = true; break; }
       }
       if (changed) break;
     }
